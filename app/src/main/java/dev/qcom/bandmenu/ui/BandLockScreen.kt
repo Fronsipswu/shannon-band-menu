@@ -99,7 +99,6 @@ fun BandLockScreen(
     nrIndependentSupported: Boolean? = null,
     visibleLteBands: Set<Int>? = null,
     visibleNrBands: Set<Int>? = null,
-    contentPadding: PaddingValues = PaddingValues(),
     snackbarHostState: SnackbarHostState,
     backdrop: Backdrop? = null
 ) {
@@ -129,7 +128,9 @@ fun BandLockScreen(
         selectedSim = pagerState.targetPage
     }
 
-    Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+    // SmallTopAppBar always applies the top system-bar inset itself. Applying
+    // the scaffold's top padding here would count that inset twice.
+    Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading || hardware == null) {
             Box(
                 modifier = Modifier.fillMaxSize(),

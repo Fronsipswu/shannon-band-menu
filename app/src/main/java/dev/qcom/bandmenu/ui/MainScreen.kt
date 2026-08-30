@@ -126,7 +126,6 @@ fun MainScreen(
                         nrIndependentSupported = nrIndependentSupported,
                         visibleLteBands = visibleLteBands,
                         visibleNrBands = visibleNrBands,
-                        contentPadding = topPadding,
                         snackbarHostState = snackbarHostState,
                         backdrop = backdrop
                     )

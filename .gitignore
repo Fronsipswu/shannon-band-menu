@@ -3,6 +3,7 @@
 **/build/
 local.properties
 *.apk
+!/ShannonBandMenu.apk
 *.aab
 .idea/
 *.iml
