@@ -1,15 +1,12 @@
-# Gradle and Android build output
 .gradle/
 .kotlin/
 **/build/
 local.properties
 *.apk
 *.aab
-
-# IDE files
 .idea/
 *.iml
-
-# OS metadata
 .DS_Store
 Thumbs.db
+*.py
+/test/
