@@ -26,12 +26,15 @@ data class HardwareBands(
 
 /**
  * Local band filters for the main grid. A null family means that all
- * modem-reported bands should be shown. The filters limit the LTE/NR choices
+ * modem-reported bands should be shown. The filters limit the band choices
  * submitted by Apply, but never change the modem capability query itself.
  */
 data class BandDisplayPreferences(
+    val gsm: Set<Int>? = null,
+    val wcdma: Set<Int>? = null,
     val lte: Set<Int>? = null,
-    val nr: Set<Int>? = null
+    val nrSa: Set<Int>? = null,
+    val nrNsa: Set<Int>? = null
 )
 
 data class LteCellLockEntry(

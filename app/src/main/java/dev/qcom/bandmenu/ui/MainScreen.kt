@@ -77,9 +77,12 @@ fun MainScreen(
     onCellLockRefresh: () -> Unit,
     cellLockRefreshKey: Int,
     nrIndependentSupported: Boolean?,
+    visibleGsmBands: Set<Int>? = null,
+    visibleWcdmaBands: Set<Int>? = null,
     visibleLteBands: Set<Int>? = null,
-    visibleNrBands: Set<Int>? = null,
-    onBandVisibilitySave: (Set<Int>?, Set<Int>?) -> Unit = { _, _ -> }
+    visibleNrSaBands: Set<Int>? = null,
+    visibleNrNsaBands: Set<Int>? = null,
+    onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
     var selectedIndex by remember { mutableIntStateOf(0) }
     val pagerState = rememberPagerState(pageCount = { 2 })
@@ -124,8 +127,11 @@ fun MainScreen(
                         onReset = onReset,
                         onModeChange = onModeChange,
                         nrIndependentSupported = nrIndependentSupported,
+                        visibleGsmBands = visibleGsmBands,
+                        visibleWcdmaBands = visibleWcdmaBands,
                         visibleLteBands = visibleLteBands,
-                        visibleNrBands = visibleNrBands,
+                        visibleNrSaBands = visibleNrSaBands,
+                        visibleNrNsaBands = visibleNrNsaBands,
                         snackbarHostState = snackbarHostState,
                         backdrop = backdrop
                     )
@@ -155,8 +161,11 @@ fun MainScreen(
                         debugEnabled = debugEnabled,
                         onDebugToggle = onDebugToggle,
                         hardware = modemState?.hardware,
+                        visibleGsmBands = visibleGsmBands,
+                        visibleWcdmaBands = visibleWcdmaBands,
                         visibleLteBands = visibleLteBands,
-                        visibleNrBands = visibleNrBands,
+                        visibleNrSaBands = visibleNrSaBands,
+                        visibleNrNsaBands = visibleNrNsaBands,
                         onBandVisibilitySave = onBandVisibilitySave
                     )
                 }

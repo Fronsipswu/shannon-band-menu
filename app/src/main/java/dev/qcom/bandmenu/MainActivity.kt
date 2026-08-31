@@ -860,12 +860,17 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    visibleGsmBands = bandDisplayPreferences.gsm,
+                    visibleWcdmaBands = bandDisplayPreferences.wcdma,
                     visibleLteBands = bandDisplayPreferences.lte,
-                    visibleNrBands = bandDisplayPreferences.nr,
-                    onBandVisibilitySave = { lte, nr ->
-                        bandDisplayPreferences = BandDisplayPreferences(lte = lte, nr = nr)
+                    visibleNrSaBands = bandDisplayPreferences.nrSa,
+                    visibleNrNsaBands = bandDisplayPreferences.nrNsa,
+                    onBandVisibilitySave = { nrSa, nrNsa, lte, wcdma, gsm ->
+                        bandDisplayPreferences = BandDisplayPreferences(
+                            gsm = gsm, wcdma = wcdma, lte = lte, nrSa = nrSa, nrNsa = nrNsa
+                        )
                         scope.launch {
-                            BandPreferences.setBandDisplayPreferences(bandDataStore, lte, nr)
+                            BandPreferences.setBandDisplayPreferences(bandDataStore, gsm, wcdma, lte, nrSa, nrNsa)
                         }
                     }
                 )

@@ -29,8 +29,11 @@ object BandPreferences {
     private val PROFILE_SAVED_SIM2 = booleanPreferencesKey("profile_saved_sim2")
     private val DEBUG_LOGGING = booleanPreferencesKey("debug_logging")
     private val NR_INDEPENDENT_SUPPORTED = booleanPreferencesKey("nr_independent_supported")
+    private val VISIBLE_GSM_BANDS = stringSetPreferencesKey("visible_gsm_bands")
+    private val VISIBLE_WCDMA_BANDS = stringSetPreferencesKey("visible_wcdma_bands")
     private val VISIBLE_LTE_BANDS = stringSetPreferencesKey("visible_lte_bands")
-    private val VISIBLE_NR_BANDS = stringSetPreferencesKey("visible_nr_bands")
+    private val VISIBLE_NR_SA_BANDS = stringSetPreferencesKey("visible_nr_sa_bands")
+    private val VISIBLE_NR_NSA_BANDS = stringSetPreferencesKey("visible_nr_nsa_bands")
 
     fun getSimState(dataStore: DataStore<Preferences>, sim: Int): Flow<SimState?> {
         return dataStore.data.map { prefs ->
@@ -118,8 +121,11 @@ object BandPreferences {
     fun getBandDisplayPreferences(dataStore: DataStore<Preferences>): Flow<BandDisplayPreferences> {
         return dataStore.data.map { prefs ->
             BandDisplayPreferences(
+                gsm = prefs[VISIBLE_GSM_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet(),
+                wcdma = prefs[VISIBLE_WCDMA_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet(),
                 lte = prefs[VISIBLE_LTE_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet(),
-                nr = prefs[VISIBLE_NR_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet()
+                nrSa = prefs[VISIBLE_NR_SA_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet(),
+                nrNsa = prefs[VISIBLE_NR_NSA_BANDS]?.mapNotNull { it.toIntOrNull() }?.toSet()
             )
         }
     }
@@ -127,14 +133,23 @@ object BandPreferences {
     /** Pass null for a family to restore its default (show all) behavior. */
     suspend fun setBandDisplayPreferences(
         dataStore: DataStore<Preferences>,
+        gsm: Set<Int>?,
+        wcdma: Set<Int>?,
         lte: Set<Int>?,
-        nr: Set<Int>?
+        nrSa: Set<Int>?,
+        nrNsa: Set<Int>?
     ) {
         dataStore.edit { prefs ->
+            if (gsm == null) prefs.remove(VISIBLE_GSM_BANDS)
+            else prefs[VISIBLE_GSM_BANDS] = gsm.map { it.toString() }.toSet()
+            if (wcdma == null) prefs.remove(VISIBLE_WCDMA_BANDS)
+            else prefs[VISIBLE_WCDMA_BANDS] = wcdma.map { it.toString() }.toSet()
             if (lte == null) prefs.remove(VISIBLE_LTE_BANDS)
             else prefs[VISIBLE_LTE_BANDS] = lte.map { it.toString() }.toSet()
-            if (nr == null) prefs.remove(VISIBLE_NR_BANDS)
-            else prefs[VISIBLE_NR_BANDS] = nr.map { it.toString() }.toSet()
+            if (nrSa == null) prefs.remove(VISIBLE_NR_SA_BANDS)
+            else prefs[VISIBLE_NR_SA_BANDS] = nrSa.map { it.toString() }.toSet()
+            if (nrNsa == null) prefs.remove(VISIBLE_NR_NSA_BANDS)
+            else prefs[VISIBLE_NR_NSA_BANDS] = nrNsa.map { it.toString() }.toSet()
         }
     }
 }

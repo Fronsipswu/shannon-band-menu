@@ -43,16 +43,22 @@ fun InfoScreen(
     debugEnabled: Boolean = false,
     onDebugToggle: () -> Unit = {},
     hardware: HardwareBands? = null,
+    visibleGsmBands: Set<Int>? = null,
+    visibleWcdmaBands: Set<Int>? = null,
     visibleLteBands: Set<Int>? = null,
-    visibleNrBands: Set<Int>? = null,
-    onBandVisibilitySave: (Set<Int>?, Set<Int>?) -> Unit = { _, _ -> }
+    visibleNrSaBands: Set<Int>? = null,
+    visibleNrNsaBands: Set<Int>? = null,
+    onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
     var showSettings by remember { mutableStateOf(false) }
     if (showSettings && hardware != null) {
         SettingsScreen(
             hardware = hardware,
+            visibleGsmBands = visibleGsmBands,
+            visibleWcdmaBands = visibleWcdmaBands,
             visibleLteBands = visibleLteBands,
-            visibleNrBands = visibleNrBands,
+            visibleNrSaBands = visibleNrSaBands,
+            visibleNrNsaBands = visibleNrNsaBands,
             onSave = onBandVisibilitySave,
             onBack = { showSettings = false },
             contentPadding = contentPadding

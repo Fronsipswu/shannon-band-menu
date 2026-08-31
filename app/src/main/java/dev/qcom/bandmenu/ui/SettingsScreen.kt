@@ -33,16 +33,19 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 
 /**
- * Controls which LTE/NR entries are available in the main page and Apply.
+ * Controls which band entries are available in the main page and Apply.
  * Hidden bands remain part of the modem capability query, but are excluded
  * from the next Apply payload until enabled here again.
  */
 @Composable
 fun SettingsScreen(
     hardware: HardwareBands,
+    visibleGsmBands: Set<Int>?,
+    visibleWcdmaBands: Set<Int>?,
     visibleLteBands: Set<Int>?,
-    visibleNrBands: Set<Int>?,
-    onSave: (Set<Int>?, Set<Int>?) -> Unit,
+    visibleNrSaBands: Set<Int>?,
+    visibleNrNsaBands: Set<Int>?,
+    onSave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit,
     onBack: () -> Unit,
     contentPadding: PaddingValues = PaddingValues()
 ) {
@@ -51,19 +54,39 @@ fun SettingsScreen(
     val density = LocalDensity.current
     val navInset = WindowInsets.navigationBars.asPaddingValues(density).calculateBottomPadding()
     val bottomSpace = 88.dp + navInset
-    val lteBands = hardware.lte.sorted()
     val nrBands = hardware.nr.sorted()
+    val lteBands = hardware.lte.sorted()
+    val wcdmaBands = hardware.wcdma.sorted()
+    val gsmBands = hardware.gsm.sorted()
 
+    val nrSaChecked = remember(visibleNrSaBands, hardware.nr) {
+        mutableStateMapOf<Int, Boolean>().apply {
+            val selected = visibleNrSaBands ?: hardware.nr
+            hardware.nr.forEach { this[it] = it in selected }
+        }
+    }
+    val nrNsaChecked = remember(visibleNrNsaBands, hardware.nr) {
+        mutableStateMapOf<Int, Boolean>().apply {
+            val selected = visibleNrNsaBands ?: hardware.nr
+            hardware.nr.forEach { this[it] = it in selected }
+        }
+    }
     val lteChecked = remember(visibleLteBands, hardware.lte) {
         mutableStateMapOf<Int, Boolean>().apply {
             val selected = visibleLteBands ?: hardware.lte
             hardware.lte.forEach { this[it] = it in selected }
         }
     }
-    val nrChecked = remember(visibleNrBands, hardware.nr) {
+    val wcdmaChecked = remember(visibleWcdmaBands, hardware.wcdma) {
         mutableStateMapOf<Int, Boolean>().apply {
-            val selected = visibleNrBands ?: hardware.nr
-            hardware.nr.forEach { this[it] = it in selected }
+            val selected = visibleWcdmaBands ?: hardware.wcdma
+            hardware.wcdma.forEach { this[it] = it in selected }
+        }
+    }
+    val gsmChecked = remember(visibleGsmBands, hardware.gsm) {
+        mutableStateMapOf<Int, Boolean>().apply {
+            val selected = visibleGsmBands ?: hardware.gsm
+            hardware.gsm.forEach { this[it] = it in selected }
         }
     }
 
@@ -82,11 +105,30 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
             SmallTitle("Settings")
             Text(
-                "Choose which LTE and NR bands to use on the main page.",
+                "Choose which bands to use on the main page.",
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(16.dp))
+
+            if (nrBands.isNotEmpty()) {
+                SmallTitle("NR-SA bands")
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    BandCheckboxGrid(
+                        bands = nrBands,
+                        checked = nrSaChecked,
+                        prefix = "n"
+                    )
+                }
+                SmallTitle("NR-NSA bands")
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    BandCheckboxGrid(
+                        bands = nrBands,
+                        checked = nrNsaChecked,
+                        prefix = "n"
+                    )
+                }
+            }
 
             if (lteBands.isNotEmpty()) {
                 SmallTitle("LTE bands")
@@ -99,13 +141,24 @@ fun SettingsScreen(
                 }
             }
 
-            if (nrBands.isNotEmpty()) {
-                SmallTitle("NR bands")
+            if (wcdmaBands.isNotEmpty()) {
+                SmallTitle("WCDMA bands")
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     BandCheckboxGrid(
-                        bands = nrBands,
-                        checked = nrChecked,
-                        prefix = "n"
+                        bands = wcdmaBands,
+                        checked = wcdmaChecked,
+                        prefix = "B"
+                    )
+                }
+            }
+
+            if (gsmBands.isNotEmpty()) {
+                SmallTitle("GSM bands")
+                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    BandCheckboxGrid(
+                        bands = gsmBands,
+                        checked = gsmChecked,
+                        prefix = ""
                     )
                 }
             }
@@ -117,18 +170,26 @@ fun SettingsScreen(
                 TextButton(
                     text = "Reset all",
                     onClick = {
+                        hardware.nr.forEach { nrSaChecked[it] = true; nrNsaChecked[it] = true }
                         hardware.lte.forEach { lteChecked[it] = true }
-                        hardware.nr.forEach { nrChecked[it] = true }
+                        hardware.wcdma.forEach { wcdmaChecked[it] = true }
+                        hardware.gsm.forEach { gsmChecked[it] = true }
                     },
                     modifier = Modifier.weight(1f)
                 )
                 Button(
                     onClick = {
+                        val selectedNrSa = selected(nrSaChecked)
+                        val selectedNrNsa = selected(nrNsaChecked)
                         val selectedLte = selected(lteChecked)
-                        val selectedNr = selected(nrChecked)
+                        val selectedWcdma = selected(wcdmaChecked)
+                        val selectedGsm = selected(gsmChecked)
                         onSave(
+                            selectedNrSa.takeUnless { it == hardware.nr },
+                            selectedNrNsa.takeUnless { it == hardware.nr },
                             selectedLte.takeUnless { it == hardware.lte },
-                            selectedNr.takeUnless { it == hardware.nr }
+                            selectedWcdma.takeUnless { it == hardware.wcdma },
+                            selectedGsm.takeUnless { it == hardware.gsm }
                         )
                         onBack()
                     },

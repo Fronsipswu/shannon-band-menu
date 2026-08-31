@@ -10,4 +10,4 @@ local.properties
 .DS_Store
 Thumbs.db
 *.py
-/test/
+*.apk

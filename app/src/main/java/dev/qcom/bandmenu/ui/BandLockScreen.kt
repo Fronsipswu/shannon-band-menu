@@ -97,8 +97,11 @@ fun BandLockScreen(
     onReset: (Int) -> Unit,
     onModeChange: (Int, NrMode) -> Unit = { _, _ -> },
     nrIndependentSupported: Boolean? = null,
+    visibleGsmBands: Set<Int>? = null,
+    visibleWcdmaBands: Set<Int>? = null,
     visibleLteBands: Set<Int>? = null,
-    visibleNrBands: Set<Int>? = null,
+    visibleNrSaBands: Set<Int>? = null,
+    visibleNrNsaBands: Set<Int>? = null,
     snackbarHostState: SnackbarHostState,
     backdrop: Backdrop? = null
 ) {
@@ -139,11 +142,13 @@ fun BandLockScreen(
                 CircularProgressIndicator()
             }
         } else {
+            val displayNrSa = (visibleNrSaBands ?: hardware.nr).intersect(hardware.nr)
+            val displayNrNsa = (visibleNrNsaBands ?: hardware.nr).intersect(hardware.nr)
             val displayHardware = HardwareBands(
-                gsm = hardware.gsm,
-                wcdma = hardware.wcdma,
+                gsm = (visibleGsmBands ?: hardware.gsm).intersect(hardware.gsm),
+                wcdma = (visibleWcdmaBands ?: hardware.wcdma).intersect(hardware.wcdma),
                 lte = (visibleLteBands ?: hardware.lte).intersect(hardware.lte),
-                nr = (visibleNrBands ?: hardware.nr).intersect(hardware.nr)
+                nr = displayNrSa.union(displayNrNsa)
             )
 
             fun applyNow() {
@@ -162,27 +167,27 @@ fun BandLockScreen(
                 }
 
                 val nrBands = if (isNrActive) s.nrChecked.filterValues { it }.keys.intersect(displayHardware.nr) else emptySet()
-                val selectedNrNsa = s.nrNsaChecked.filterValues { it }.keys.intersect(displayHardware.nr)
-                val selectedNrSa = s.nrSaChecked.filterValues { it }.keys.intersect(displayHardware.nr)
+                val selectedNrNsa = s.nrNsaChecked.filterValues { it }.keys.intersect(displayNrNsa)
+                val selectedNrSa = s.nrSaChecked.filterValues { it }.keys.intersect(displayNrSa)
                 // A mode-inactive family is intentionally rendered empty. If
                 // NR-only Apply activates both families, restore that family's
                 // internal profile instead of submitting/persisting the empty UI.
                 val effectiveNrNsa = if (isNrOnly && selectedNrNsa.isEmpty()) {
-                    desiredProfile?.nrNsaBands?.intersect(displayHardware.nr).orEmpty()
+                    desiredProfile?.nrNsaBands?.intersect(displayNrNsa).orEmpty()
                 } else selectedNrNsa
                 val effectiveNrSa = if (isNrOnly && selectedNrSa.isEmpty()) {
-                    desiredProfile?.nrSaBands?.intersect(displayHardware.nr).orEmpty()
+                    desiredProfile?.nrSaBands?.intersect(displayNrSa).orEmpty()
                 } else selectedNrSa
                 val nrNsaBands = if (isNrActive) (if (useIndependentLock) effectiveNrNsa else nrBands) else emptySet()
                 val nrSaBands = if (isNrActive) (if (useIndependentLock) effectiveNrSa else nrBands) else emptySet()
                 val lteBands = if (isLteActive) s.lteChecked.filterValues { it }.keys.intersect(displayHardware.lte) else emptySet()
                 val wcdmaBands = if (isWcdmaActive) {
-                    val checked = s.wcdmaChecked.filterValues { it }.keys.intersect(hardware.wcdma)
-                    if (checked.isNotEmpty()) checked else hardware.wcdma
+                    val checked = s.wcdmaChecked.filterValues { it }.keys.intersect(displayHardware.wcdma)
+                    if (checked.isNotEmpty()) checked else displayHardware.wcdma
                 } else {
                     setOf(5) // Workaround: enable just WCDMA Band V when WCDMA is deselected
                 }
-                val gsmBands = if (isGsmActive) s.gsmChecked.filterValues { it }.keys else emptySet()
+                val gsmBands = if (isGsmActive) s.gsmChecked.filterValues { it }.keys.intersect(displayHardware.gsm) else emptySet()
 
                 val state = SimState(
                     ratMask = s.ratChecked.filterValues { it }.keys,
@@ -208,13 +213,13 @@ fun BandLockScreen(
 
                 val rememberedGsm = rememberedBands(
                     BandFamily.GSM, s.gsmChecked.filterValues { it }.keys,
-                    desiredProfile?.gsmBands, hardware.gsm
+                    desiredProfile?.gsmBands, displayHardware.gsm
                 )
-                val selectedWcdma = s.wcdmaChecked.filterValues { it }.keys.intersect(hardware.wcdma)
+                val selectedWcdma = s.wcdmaChecked.filterValues { it }.keys.intersect(displayHardware.wcdma)
                 val rememberedWcdma = if (isWcdmaActive) {
                     if (selectedWcdma.isNotEmpty()) selectedWcdma else rememberedBands(
                         BandFamily.WCDMA, selectedWcdma,
-                        desiredProfile?.wcdmaBands, hardware.wcdma
+                        desiredProfile?.wcdmaBands, displayHardware.wcdma
                     )
                 } else {
                     // Preserve remembered WCDMA selections (e.g. B1, B1+B8) when WCDMA is deselected
@@ -242,11 +247,11 @@ fun BandLockScreen(
                         (s.nrMode == NrMode.SA || s.nrMode == NrMode.BOTH)
                     rememberedNsa = if (nsaActiveForProfile) effectiveNrNsa else rememberedBands(
                         BandFamily.NR_NSA, selectedNrNsa,
-                        desiredProfile?.nrNsaBands?.intersect(displayHardware.nr), displayHardware.nr
+                        desiredProfile?.nrNsaBands?.intersect(displayNrNsa), displayNrNsa
                     )
                     rememberedSa = if (saActiveForProfile) effectiveNrSa else rememberedBands(
                         BandFamily.NR_SA, selectedNrSa,
-                        desiredProfile?.nrSaBands?.intersect(displayHardware.nr), displayHardware.nr
+                        desiredProfile?.nrSaBands?.intersect(displayNrSa), displayNrSa
                     )
                 } else {
                     val visibleNr = s.nrChecked.filterValues { it }.keys.intersect(displayHardware.nr)
@@ -292,16 +297,16 @@ fun BandLockScreen(
                             val isWcdmaActive = s.ratChecked[RatType.WCDMA] == true
                             val isGsmActive = s.ratChecked[RatType.GSM] == true
                             val nrBands = if (isNrActive) s.nrChecked.filterValues { it }.keys.intersect(displayHardware.nr) else emptySet()
-                            val nrNsaBands = if (isNrActive) (if (useIndependentLock) s.nrNsaChecked.filterValues { it }.keys.intersect(displayHardware.nr) else nrBands) else emptySet()
-                            val nrSaBands = if (isNrActive) (if (useIndependentLock) s.nrSaChecked.filterValues { it }.keys.intersect(displayHardware.nr) else nrBands) else emptySet()
+                            val nrNsaBands = if (isNrActive) (if (useIndependentLock) s.nrNsaChecked.filterValues { it }.keys.intersect(displayNrNsa) else nrBands) else emptySet()
+                            val nrSaBands = if (isNrActive) (if (useIndependentLock) s.nrSaChecked.filterValues { it }.keys.intersect(displayNrSa) else nrBands) else emptySet()
                             val lteBands = if (isLteActive) s.lteChecked.filterValues { it }.keys.intersect(displayHardware.lte) else emptySet()
                             val wcdmaBands = if (isWcdmaActive) {
-                                val checked = s.wcdmaChecked.filterValues { it }.keys.intersect(hardware.wcdma)
-                                if (checked.isNotEmpty()) checked else hardware.wcdma
+                                val checked = s.wcdmaChecked.filterValues { it }.keys.intersect(displayHardware.wcdma)
+                                if (checked.isNotEmpty()) checked else displayHardware.wcdma
                             } else {
                                 setOf(5) // Workaround: enable just WCDMA Band V when WCDMA is deselected
                             }
-                            val gsmBands = if (isGsmActive) s.gsmChecked.filterValues { it }.keys else emptySet()
+                            val gsmBands = if (isGsmActive) s.gsmChecked.filterValues { it }.keys.intersect(displayHardware.gsm) else emptySet()
 
                             return SimState(
                                 ratMask = s.ratChecked.filterValues { it }.keys,
@@ -326,6 +331,8 @@ fun BandLockScreen(
                             desiredProfile = desiredProfile,
                             hardware = hardware,
                             displayHardware = displayHardware,
+                            displayNrSa = displayNrSa,
+                            displayNrNsa = displayNrNsa,
                             useIndependentLock = useIndependentLock,
                             refreshKey = refreshKey,
                             onModeChange = { mode -> onModeChange(0, mode) }
@@ -388,6 +395,8 @@ private fun SimBandLockPage(
     desiredProfile: SimState?,
     hardware: HardwareBands,
     displayHardware: HardwareBands,
+    displayNrSa: Set<Int>,
+    displayNrNsa: Set<Int>,
     useIndependentLock: Boolean,
     refreshKey: Int,
     onModeChange: (NrMode) -> Unit = {}
@@ -754,30 +763,32 @@ private fun SimBandLockPage(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (displayHardware.nr.isNotEmpty()) {
-            if (useIndependentLock) {
+        if (useIndependentLock) {
+            if (displayNrSa.isNotEmpty()) {
                 SmallTitle("NR-SA", modifier = Modifier.then(if (isNrSaEnabled) Modifier else Modifier.alpha(0.4f)))
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     BandCheckboxGrid(
-                        displayHardware.nr.sorted(), state.nrSaChecked, "n", enabled = isNrSaEnabled,
+                        displayNrSa.sorted(), state.nrSaChecked, "n", enabled = isNrSaEnabled,
                         onSelectionChanged = { state.editedBandFamilies[BandFamily.NR_SA] = true }
                     )
                 }
+            }
+            if (displayNrNsa.isNotEmpty()) {
                 SmallTitle("NR-NSA", modifier = Modifier.then(if (isNrNsaEnabled) Modifier else Modifier.alpha(0.4f)))
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     BandCheckboxGrid(
-                        displayHardware.nr.sorted(), state.nrNsaChecked, "n", enabled = isNrNsaEnabled,
+                        displayNrNsa.sorted(), state.nrNsaChecked, "n", enabled = isNrNsaEnabled,
                         onSelectionChanged = { state.editedBandFamilies[BandFamily.NR_NSA] = true }
                     )
                 }
-            } else {
-                SmallTitle("NR", modifier = Modifier.then(if (isNrEnabled) Modifier else Modifier.alpha(0.4f)))
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    BandCheckboxGrid(
-                        displayHardware.nr.sorted(), state.nrChecked, "n", enabled = isNrEnabled,
-                        onSelectionChanged = { state.editedBandFamilies[BandFamily.NR] = true }
-                    )
-                }
+            }
+        } else if (displayHardware.nr.isNotEmpty()) {
+            SmallTitle("NR", modifier = Modifier.then(if (isNrEnabled) Modifier else Modifier.alpha(0.4f)))
+            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                BandCheckboxGrid(
+                    displayHardware.nr.sorted(), state.nrChecked, "n", enabled = isNrEnabled,
+                    onSelectionChanged = { state.editedBandFamilies[BandFamily.NR] = true }
+                )
             }
         }
         if (displayHardware.lte.isNotEmpty()) {
@@ -789,11 +800,11 @@ private fun SimBandLockPage(
                 )
             }
         }
-        if (hardware.wcdma.isNotEmpty()) {
+        if (displayHardware.wcdma.isNotEmpty()) {
             SmallTitle("WCDMA", modifier = Modifier.then(if (isWcdmaEnabled) Modifier else Modifier.alpha(0.4f)))
             Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 BandCheckboxGrid(
-                    hardware.wcdma.sorted(),
+                    displayHardware.wcdma.sorted(),
                     state.wcdmaChecked,
                     "B",
                     enabled = isWcdmaEnabled,
@@ -801,11 +812,11 @@ private fun SimBandLockPage(
                 )
             }
         }
-        if (hardware.gsm.isNotEmpty()) {
+        if (displayHardware.gsm.isNotEmpty()) {
             SmallTitle("GSM", modifier = Modifier.then(if (isGsmEnabled) Modifier else Modifier.alpha(0.4f)))
             Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 BandCheckboxGrid(
-                    hardware.gsm.sorted(), state.gsmChecked, "", enabled = isGsmEnabled,
+                    displayHardware.gsm.sorted(), state.gsmChecked, "", enabled = isGsmEnabled,
                     onSelectionChanged = { state.editedBandFamilies[BandFamily.GSM] = true }
                 )
             }
