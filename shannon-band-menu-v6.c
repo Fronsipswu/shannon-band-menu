@@ -1021,12 +1021,7 @@ static void print_usage_examples(void){
     out("\nTip: Commands can be chained. e.g. \"lte 1,3,28 sa 1,28,41\"\n");
 }
 
-static void draw(void){
-    out("\033[2J\033[H");
-    out("=========================\n");
-    out("Shannon Band Menu V6\n");
-    out("=========================\n");
-    print_usage_examples();
+static void print_state(void){
     out("--------------------------------------------\n");
 
     out("LTE: ");
@@ -1084,6 +1079,16 @@ static void draw(void){
     if(S.nsg_running) out("WARNING: NSG is running. May conflict with direct NV writes.\n");
     if(S.status[0]){ out("\nMessage: "); out(S.status); out("\n"); }
     out("============================================\nInput: ");
+}
+
+/* First screen only: banner and usage examples are static and would push the
+ * state block off a phone-sized viewport if re-printed on every command. */
+static void draw(void){
+    out("=========================\n");
+    out("Shannon Band Menu V6\n");
+    out("=========================\n");
+    print_usage_examples();
+    print_state();
 }
 
 static void help(void){
@@ -1413,8 +1418,10 @@ static long readline(char*b,u64 cap){
         if(n<0){b[used]=0;return used?(long)used:n;}
         if(n==0){b[used]=0;return(long)used;}
         if(c=='\r'||c=='\n'){out("\n");b[used]=0;return(long)used;}
-        if(c==8||c==127){if(used){used--;out("\b \b");}continue;}
-        if(c>=' '&&c!=127&&used+1<cap){b[used++]=c;(void)sys_write(1,&c,1);}
+        /* The terminal's line discipline already echoes and erases typed
+         * input in canonical mode; re-echoing here duplicates keystrokes. */
+        if(c==8||c==127){if(used)used--;continue;}
+        if(c>=' '&&c!=127&&used+1<cap){b[used++]=c;}
     }
 }
 
@@ -1473,10 +1480,11 @@ static int run(void){
     refresh_all_state();
     setstatus("Ready. Direct NV backend active.");
 
+    draw();
     for(;;){
-        draw();
         if(readline(line, sizeof(line)) < 0) break;
         if(handle(line) < 0) break;
+        print_state();
     }
 
     out("\nExiting Shannon Band Menu V6...\n");
