@@ -60,7 +60,7 @@ typedef __PTRDIFF_TYPE__   isize;
 
 #define CLOCK_MONOTONIC  1
 
-#define DAEMON_VERSION   "4.5.2"
+#define DAEMON_VERSION   "4.6.0"
 #define SOCKET_NAME      "shannon_bandlockd"
 #define ROUTER_PATH      "/dev/umts_router"
 /* The band-lock / NR-mode menu is rendered by the modem itself. Writing
@@ -77,12 +77,6 @@ typedef __PTRDIFF_TYPE__   isize;
 #define MENU_VERIFY_GAP_MS 100
 #define MENU_BACK        0x5c
 #define AT_TIMEOUT_MS    2000
-/* NV writes are issued back to back, but the modem intermittently stops
- * answering when CFUN follows the last write immediately. Let it settle first,
- * and allow the radio reload longer than a normal AT command. */
-#define AT_CFUN_SETTLE_MS  50
-#define AT_CFUN_FIRST_TIMEOUT_MS 1000
-#define AT_CFUN_TIMEOUT_MS 4000
 #define MAX_BAND         2048
 #define MASK_BYTES       256
 /* Shannon behaves erratically when a RAT is left with an empty manual
@@ -501,19 +495,6 @@ static int googgetnv_array(const char *name, nv_array_cb cb, void *ctx){
         if(*s == '\n') s++;
     }
     return 0;
-}
-
-static int at_reload_radio(void){
-    char resp[256];
-    /* Do not slam CFUN into the tail of an NV write burst. */
-    sleep_ms(AT_CFUN_SETTLE_MS);
-    (void)at_exec("AT+CFUN=0", resp, sizeof(resp), AT_CFUN_TIMEOUT_MS);
-    sleep_ms(150);
-    /* A transiently busy modem can miss the first radio-on request. Keep the
-     * fast path bounded to one second, then retry once with the normal AT
-     * timeout before reporting a backend failure to the app. */
-    if(at_exec("AT+CFUN=1", resp, sizeof(resp), AT_CFUN_FIRST_TIMEOUT_MS) == 0) return 0;
-    return at_exec("AT+CFUN=1", resp, sizeof(resp), AT_CFUN_TIMEOUT_MS);
 }
 
 /* 2G GSM */
@@ -1192,49 +1173,47 @@ static int handle_client_request(int client_fd, const char *req_line){
             }
         }
 
-        /* The menu-driven mode change performs its own radio reload, and that
-         * reload adopts band NV writes made just before it (verified on
-         * device). So our CFUN is only needed when no mode change follows. */
-        if(mode_will_change){
-            if(ok && write_mode_state(requested_mode) < 0) ok = 0;
-        } else if(changed){
-            if(at_reload_radio() < 0) ok = 0;
+        /* Re-selecting the current NR mode is an idempotent Apply action in
+         * the modem menu: it reloads the radio and adopts the band NV writes
+         * even when the mode value itself did not change. Never use CFUN. */
+        if(ok && (changed || mode_will_change)){
+            if(write_mode_state(requested_mode) < 0) ok = 0;
         }
         refresh_all_state();
     } else if(contains_ci(cmd, "lte_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_lte_state(mask, spec) >= 0);
-            (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "nr_sa_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_sa_state(mask, spec) >= 0);
-            (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "nr_nsa_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_nsa_state(mask, spec) >= 0);
-            (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "nr_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_sa_state(mask, spec) >= 0) && (write_nsa_state(mask, spec) >= 0);
-            (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "wcdma_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_wcdma_state(mask, spec) >= 0);
-            if(ok) (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "gsm_set")){
         if(parse_json_bands(req_line, mask, &spec) == 0){
             ok = (write_gsm_state(mask, spec) >= 0);
-            (void)at_reload_radio();
+            if(ok && write_mode_state(G.mode) < 0) ok = 0;
             refresh_all_state();
         }
     } else if(contains_ci(cmd, "mode_set")){
@@ -1243,24 +1222,20 @@ static int handle_client_request(int client_fd, const char *req_line){
         else if(contains_ci(req_line, "\"nsa\"")) requested_mode = NR_MODE_NSA;
         else if(contains_ci(req_line, "\"disable\"") || contains_ci(req_line, "\"off\"") || contains_ci(req_line, "\"none\"")) requested_mode = NR_MODE_DISABLE;
         else requested_mode = NR_MODE_BOTH;
-        /* Tapping the mode that is already active must not drop the radio.
-         * The menu handler applies the change itself, so no CFUN here. */
-        if(requested_mode != G.mode){
-            if(write_mode_state(requested_mode) < 0) ok = 0;
-        }
+        /* Selecting the active value again intentionally re-applies it and
+         * performs the modem menu's radio reload. */
+        if(write_mode_state(requested_mode) < 0) ok = 0;
         refresh_all_state();
     } else if(contains_ci(cmd, "rat_set")){
         ok = 1;
     } else if(contains_ci(cmd, "reset")){
-        int mode_will_change = (G.mode != NR_MODE_BOTH);
-        (void)write_lte_state(NULL, SPEC_ALL);
-        (void)write_sa_state(NULL, SPEC_ALL);
-        (void)write_nsa_state(NULL, SPEC_ALL);
-        (void)write_wcdma_state(NULL, SPEC_ALL);
-        (void)write_gsm_state(NULL, SPEC_ALL);
-        /* Menu apply reloads the radio and adopts the band writes above. */
-        if(mode_will_change) (void)write_mode_state(NR_MODE_BOTH);
-        else (void)at_reload_radio();
+        ok = (write_lte_state(NULL, SPEC_ALL) >= 0);
+        if(ok) ok = (write_sa_state(NULL, SPEC_ALL) >= 0);
+        if(ok) ok = (write_nsa_state(NULL, SPEC_ALL) >= 0);
+        if(ok) ok = (write_wcdma_state(NULL, SPEC_ALL) >= 0);
+        if(ok) ok = (write_gsm_state(NULL, SPEC_ALL) >= 0);
+        /* Re-select SA+NSA even when already active so Reset always applies. */
+        if(ok && write_mode_state(NR_MODE_BOTH) < 0) ok = 0;
         refresh_all_state();
     } else if(contains_ci(cmd, "shutdown")){
         char resp_buf[128]; usize p = 0;

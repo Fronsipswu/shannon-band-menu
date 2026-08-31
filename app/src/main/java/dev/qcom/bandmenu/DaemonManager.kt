@@ -21,7 +21,7 @@ class DaemonManager(private val context: Context) {
         private const val TAG = "ShannonBand"
         private const val BINARY_NAME = "shannon-bandlockd"
         private const val SOCKET_NAME = "shannon_bandlockd"
-        private const val EXPECTED_DAEMON_VERSION = "4.5.2"
+        private const val EXPECTED_DAEMON_VERSION = "4.6.0"
     }
 
     var isReady = mutableStateOf(false)
