@@ -60,7 +60,7 @@ typedef __PTRDIFF_TYPE__   isize;
 
 #define CLOCK_MONOTONIC  1
 
-#define DAEMON_VERSION   "4.5.1"
+#define DAEMON_VERSION   "4.5.2"
 #define SOCKET_NAME      "shannon_bandlockd"
 #define ROUTER_PATH      "/dev/umts_router"
 /* The band-lock / NR-mode menu is rendered by the modem itself. Writing
@@ -81,6 +81,7 @@ typedef __PTRDIFF_TYPE__   isize;
  * answering when CFUN follows the last write immediately. Let it settle first,
  * and allow the radio reload longer than a normal AT command. */
 #define AT_CFUN_SETTLE_MS  50
+#define AT_CFUN_FIRST_TIMEOUT_MS 1000
 #define AT_CFUN_TIMEOUT_MS 4000
 #define MAX_BAND         2048
 #define MASK_BYTES       256
@@ -508,6 +509,10 @@ static int at_reload_radio(void){
     sleep_ms(AT_CFUN_SETTLE_MS);
     (void)at_exec("AT+CFUN=0", resp, sizeof(resp), AT_CFUN_TIMEOUT_MS);
     sleep_ms(150);
+    /* A transiently busy modem can miss the first radio-on request. Keep the
+     * fast path bounded to one second, then retry once with the normal AT
+     * timeout before reporting a backend failure to the app. */
+    if(at_exec("AT+CFUN=1", resp, sizeof(resp), AT_CFUN_FIRST_TIMEOUT_MS) == 0) return 0;
     return at_exec("AT+CFUN=1", resp, sizeof(resp), AT_CFUN_TIMEOUT_MS);
 }
 
