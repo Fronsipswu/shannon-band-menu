@@ -1,19 +1,25 @@
 package fronsipswu.shannonbandmenu.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,35 +28,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.size
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import fronsipswu.shannonbandmenu.ui.component.FloatingBottomBar
-import fronsipswu.shannonbandmenu.ui.component.FloatingBottomBarItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Info
-import top.yukonga.miuix.kmp.icon.extended.Phone
-import top.yukonga.miuix.kmp.icon.extended.Search
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.ui.res.painterResource
+import fronsipswu.shannonbandmenu.ModemState
+import fronsipswu.shannonbandmenu.NrMode
+import fronsipswu.shannonbandmenu.R
+import fronsipswu.shannonbandmenu.SimState
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun MainScreen(
-    onApply: (Int, fronsipswu.shannonbandmenu.SimState, fronsipswu.shannonbandmenu.SimState) -> Unit,
+    onApply: (Int, SimState, SimState) -> Unit,
     onReset: (Int) -> Unit,
-    onModeChange: (Int, fronsipswu.shannonbandmenu.NrMode) -> Unit = { _, _ -> },
+    onModeChange: (Int, NrMode) -> Unit = { _, _ -> },
     refreshingSlots: Set<Int>,
     onRefresh: (Int) -> Unit,
     refreshKey0: Int,
     refreshKey1: Int,
-    modemState: fronsipswu.shannonbandmenu.ModemState?,
-    desiredProfile: fronsipswu.shannonbandmenu.SimState?,
+    modemState: ModemState?,
+    desiredProfile: SimState?,
     isLoading: Boolean,
     showRootDeniedDialog: Boolean,
     onRootRetry: () -> Unit,
@@ -59,7 +54,7 @@ fun MainScreen(
     errorDialogTitle: String,
     errorDialogMessage: String,
     onDismissErrorDialog: () -> Unit,
-    snackbarHostState: top.yukonga.miuix.kmp.basic.SnackbarHostState,
+    snackbarHostState: SnackbarHostState,
     snackbarMessage: String?,
     snackbarIsError: Boolean,
     onSnackbarShown: () -> Unit,
@@ -88,34 +83,68 @@ fun MainScreen(
     val pagerState = rememberPagerState(pageCount = { 2 })
 
     LaunchedEffect(selectedIndex) {
-        if (pagerState.targetPage != selectedIndex) {
-            pagerState.animateScrollToPage(selectedIndex)
-        }
+        if (pagerState.targetPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
     }
     LaunchedEffect(pagerState.targetPage) {
         selectedIndex = pagerState.targetPage
     }
-
-    val surfaceColor = MiuixTheme.colorScheme.surface
-    val backdrop = rememberLayerBackdrop(onDraw = {
-        drawRect(surfaceColor)
-        drawContent()
-    })
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            onSnackbarShown()
+        }
+    }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize()
-    ) { innerPadding ->
-        val topPadding = PaddingValues(top = innerPadding.calculateTopPadding())
-
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedIndex == 0,
+                    onClick = { selectedIndex = 0 },
+                    icon = {
+                        Icon(
+                            painterResource(R.drawable.ic_tune),
+                            contentDescription = "Bands"
+                        )
+                    },
+                    label = { Text("Bands") }
+                )
+                NavigationBarItem(
+                    selected = selectedIndex == 1,
+                    onClick = { selectedIndex = 1 },
+                    icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
+                    label = { Text("Info") }
+                )
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = if (snackbarIsError) {
+                        MaterialTheme.colorScheme.errorContainer
+                    } else {
+                        MaterialTheme.colorScheme.inverseSurface
+                    },
+                    contentColor = if (snackbarIsError) {
+                        MaterialTheme.colorScheme.onErrorContainer
+                    } else {
+                        MaterialTheme.colorScheme.inverseOnSurface
+                    }
+                )
+            }
+        }
+    ) { contentPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
                 state = pagerState,
                 beyondViewportPageCount = 1,
-                userScrollEnabled = true,
-                modifier = Modifier.fillMaxSize().layerBackdrop(backdrop)
+                modifier = Modifier.fillMaxSize()
             ) { page ->
-                when (page) {
-                    0 -> BandLockScreen(
+                if (page == 0) {
+                    BandLockScreen(
                         modemState = modemState,
                         desiredProfile = desiredProfile,
                         isLoading = isLoading,
@@ -126,38 +155,20 @@ fun MainScreen(
                         onApply = onApply,
                         onReset = onReset,
                         onModeChange = onModeChange,
+                        debugEnabled = debugEnabled,
+                        onDebugToggle = onDebugToggle,
                         nrIndependentSupported = nrIndependentSupported,
                         visibleGsmBands = visibleGsmBands,
                         visibleWcdmaBands = visibleWcdmaBands,
                         visibleLteBands = visibleLteBands,
                         visibleNrSaBands = visibleNrSaBands,
                         visibleNrNsaBands = visibleNrNsaBands,
-                        snackbarHostState = snackbarHostState,
-                        backdrop = backdrop
+                        contentPadding = contentPadding,
+                        onBandVisibilitySave = onBandVisibilitySave
                     )
-                    /*
-                    // Cell locking is disabled on Shannon
-                    1 -> CellLockScreen(
-                        modemState = modemState,
-                        isLoading = isLoading,
-                        isRefreshing = cellLockRefreshing,
-                        onRefresh = onCellLockRefresh,
-                        refreshKey = cellLockRefreshKey,
-                        onSimSwitch = onCellLockSimSwitch,
-                        onApplyLock = onCellLockApply,
-                        onClearAll = onCellLockClearAll,
-                        onClear5G = onCellLockClear5G,
-                        onClear4G = onCellLockClear4G,
-                        onClearPlmn = onCellLockClearPlmn,
-                        lockResult = cellLockResult,
-                        onLockResultConsumed = onCellLockResultConsumed,
-                        contentPadding = topPadding,
-                        snackbarHostState = snackbarHostState,
-                        backdrop = backdrop
-                    )
-                    */
-                    else -> InfoScreen(
-                        contentPadding = topPadding,
+                } else {
+                    InfoScreen(
+                        contentPadding = contentPadding,
                         debugEnabled = debugEnabled,
                         onDebugToggle = onDebugToggle,
                         hardware = modemState?.hardware,
@@ -171,131 +182,32 @@ fun MainScreen(
                 }
             }
 
-            // Navbar overlay (floating on top of content, edge-to-edge)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                FloatingBottomBar(
-                    selectedIndex = { selectedIndex },
-                    onSelected = { selectedIndex = it },
-                    backdrop = backdrop,
-                    tabsCount = 2
-                ) {
-                    FloatingBottomBarItem(onClick = { selectedIndex = 0 }) {
-                        Icon(imageVector = MiuixIcons.Phone, contentDescription = "Bands",
-                            tint = MiuixTheme.colorScheme.onBackground, modifier = Modifier.size(18.dp))
-                        Text("Bands", style = MiuixTheme.textStyles.body2.copy(fontSize = 12.sp))
-                    }
-                    /*
-                    FloatingBottomBarItem(onClick = { selectedIndex = 1 }) {
-                        Icon(imageVector = MiuixIcons.Search, contentDescription = "Cells",
-                            tint = MiuixTheme.colorScheme.onBackground, modifier = Modifier.size(18.dp))
-                        Text("Cells", style = MiuixTheme.textStyles.body2.copy(fontSize = 12.sp))
-                    }
-                    */
-                    FloatingBottomBarItem(onClick = { selectedIndex = 1 }) {
-                        Icon(imageVector = MiuixIcons.Info, contentDescription = "Info",
-                            tint = MiuixTheme.colorScheme.onBackground, modifier = Modifier.size(18.dp))
-                        Text("Info", style = MiuixTheme.textStyles.body2.copy(fontSize = 12.sp))
-                    }
-                }
-            }
-
-            // Snackbar overlay (above the floating navbar)
-            val density = LocalDensity.current
-            val navInset = WindowInsets.navigationBars.asPaddingValues(density).calculateBottomPadding()
-            val navbarHeightDp = 64.dp
-            // Bands page has Apply/Reset buttons (~72dp) at the bottom, so the snackbar
-            // needs extra clearance. Cells and Info pages have no buttons.
-            val buttonSpace = if (selectedIndex == 0) 62.dp else 0.dp
-            top.yukonga.miuix.kmp.basic.SnackbarHost(
-                state = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = navbarHeightDp + 16.dp + navInset + buttonSpace + 18.dp)
-            ) { data ->
-                top.yukonga.miuix.kmp.basic.Snackbar(
-                    data = data,
-                    colors = top.yukonga.miuix.kmp.basic.SnackbarDefaults.snackbarColors(
-                        containerColor = if (snackbarIsError) androidx.compose.ui.graphics.Color(0xFFF44336) else androidx.compose.ui.graphics.Color(0xFF4CAF50),
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                    )
-                )
-            }
-
-            // Full-screen loading overlay (covers all pages until data is ready)
             if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MiuixTheme.colorScheme.background),
-                    contentAlignment = Alignment.Center
-                ) {
-                    top.yukonga.miuix.kmp.basic.CircularProgressIndicator()
-                }
-            }
-
-            // Status bar fade overlay
-            val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(statusBarHeight + 24.dp)
-                    .align(Alignment.TopStart)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(surfaceColor, surfaceColor.copy(alpha = 0f))
-                        )
-                    )
-            )
-
-            // Error dialogs
-            if (showRootDeniedDialog) {
-                top.yukonga.miuix.kmp.window.WindowDialog(
-                    show = true,
-                    title = "Root Access Required",
-                    summary = "This app requires root access to communicate with the Shannon modem. Please grant root access and retry.",
-                    onDismissRequest = onDismissRootDialog,
-                    content = {
-                        top.yukonga.miuix.kmp.basic.TextButton(
-                            text = "Retry",
-                            onClick = onRootRetry,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = top.yukonga.miuix.kmp.basic.ButtonDefaults.textButtonColorsPrimary()
-                        )
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    Box(contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
-                )
-            }
-
-            if (showErrorDialog) {
-                top.yukonga.miuix.kmp.window.WindowDialog(
-                    show = true,
-                    title = errorDialogTitle,
-                    summary = errorDialogMessage,
-                    onDismissRequest = onDismissErrorDialog,
-                    content = {
-                        top.yukonga.miuix.kmp.basic.TextButton(
-                            text = "OK",
-                            onClick = onDismissErrorDialog,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                )
-            }
-
-            // Snackbar
-            LaunchedEffect(snackbarMessage) {
-                if (snackbarMessage != null) {
-                    snackbarHostState.showSnackbar(snackbarMessage)
-                    onSnackbarShown()
                 }
             }
         }
+    }
+
+    if (showRootDeniedDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissRootDialog,
+            title = { Text("Root access required") },
+            text = { Text("Grant root access so Shannon Band Menu can communicate with the modem.") },
+            confirmButton = { TextButton(onClick = onRootRetry) { Text("Retry") } },
+            dismissButton = { TextButton(onClick = onDismissRootDialog) { Text("Close") } }
+        )
+    }
+
+    if (showErrorDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissErrorDialog,
+            title = { Text(errorDialogTitle) },
+            text = { Text(errorDialogMessage) },
+            confirmButton = { TextButton(onClick = onDismissErrorDialog) { Text("OK") } }
+        )
     }
 }

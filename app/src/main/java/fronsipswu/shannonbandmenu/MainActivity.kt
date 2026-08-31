@@ -14,9 +14,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.SnackbarHostState
 import androidx.datastore.preferences.preferencesDataStore
 import fronsipswu.shannonbandmenu.ui.MainScreen
 import fronsipswu.shannonbandmenu.ui.CellLockResult
+import fronsipswu.shannonbandmenu.ui.theme.ShannonMaterialTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -24,9 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.theme.darkColorScheme
 import java.io.File
 
 private val ComponentActivity.bandDataStore by preferencesDataStore(name = "band_prefs")
@@ -82,7 +81,7 @@ class MainActivity : ComponentActivity() {
         })
 
         setContent {
-            MiuixTheme(colors = darkColorScheme()) {
+            ShannonMaterialTheme {
                 val snackbarHostState = remember { SnackbarHostState() }
 
                 var modemState by remember { mutableStateOf<ModemState?>(null) }

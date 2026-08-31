@@ -3,7 +3,6 @@
 
     <application
         android:label="Shannon Band Menu"
-        android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.ShannonBandMenu"
         android:supportsRtl="true">
 

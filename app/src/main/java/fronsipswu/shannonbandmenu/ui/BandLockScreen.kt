@@ -1,24 +1,20 @@
 package fronsipswu.shannonbandmenu.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,15 +26,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.state.ToggleableState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
-import com.kyant.backdrop.Backdrop
+import androidx.compose.ui.unit.sp
 import fronsipswu.shannonbandmenu.BandConstants
 import fronsipswu.shannonbandmenu.BandProfileResolver
 import fronsipswu.shannonbandmenu.HardwareBands
@@ -46,23 +38,25 @@ import fronsipswu.shannonbandmenu.ModemState
 import fronsipswu.shannonbandmenu.NrMode
 import fronsipswu.shannonbandmenu.RatType
 import fronsipswu.shannonbandmenu.SimState
-import top.yukonga.miuix.kmp.basic.Button
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Checkbox
-import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
-import top.yukonga.miuix.kmp.basic.DropdownEntry
-import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.PullToRefresh
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
-import top.yukonga.miuix.kmp.basic.SnackbarHostState
-import top.yukonga.miuix.kmp.basic.TabRowWithContour
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBarDefaults
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import kotlinx.coroutines.delay
 
 private enum class BandFamily { GSM, WCDMA, LTE, NR, NR_NSA, NR_SA }
@@ -84,6 +78,7 @@ private class SlotBandState {
 private fun NrMode.enabledOrBoth(): NrMode =
     if (this == NrMode.DISABLE || this == NrMode.UNKNOWN) NrMode.BOTH else this
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BandLockScreen(
     modemState: ModemState?,
@@ -96,44 +91,54 @@ fun BandLockScreen(
     onApply: (Int, SimState, SimState) -> Unit,
     onReset: (Int) -> Unit,
     onModeChange: (Int, NrMode) -> Unit = { _, _ -> },
+    debugEnabled: Boolean = false,
+    onDebugToggle: () -> Unit = {},
     nrIndependentSupported: Boolean? = null,
     visibleGsmBands: Set<Int>? = null,
     visibleWcdmaBands: Set<Int>? = null,
     visibleLteBands: Set<Int>? = null,
     visibleNrSaBands: Set<Int>? = null,
     visibleNrNsaBands: Set<Int>? = null,
-    snackbarHostState: SnackbarHostState,
-    backdrop: Backdrop? = null
+    contentPadding: PaddingValues = PaddingValues(),
+    onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
-    val density = LocalDensity.current
-    val navbarHeightDp = 64.dp
-    val navInset = WindowInsets.navigationBars.asPaddingValues(density).calculateBottomPadding()
-    val navbarSpace = navbarHeightDp + 16.dp + navInset
-    val applyResetSpace = 72.dp
-    val statusBarInset = WindowInsets.statusBars.asPaddingValues(density).calculateTopPadding()
-    val topBarHeight = statusBarInset + TopAppBarDefaults.CollapsedHeight
-
     val hapticFeedback = LocalHapticFeedback.current
 
     val hardware = modemState?.hardware
     val useIndependentLock = nrIndependentSupported == true
 
+    var showSettings by remember { mutableStateOf(false) }
     var selectedSim by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(pageCount = { 2 })
     val slotStates = remember { arrayOf(SlotBandState(), SlotBandState()) }
 
-    LaunchedEffect(selectedSim) {
-        if (pagerState.targetPage != selectedSim) {
-            pagerState.animateScrollToPage(selectedSim)
-        }
-    }
-    LaunchedEffect(pagerState.targetPage) {
-        selectedSim = pagerState.targetPage
+    if (showSettings && hardware != null) {
+        SettingsScreen(
+            hardware = hardware,
+            visibleGsmBands = visibleGsmBands,
+            visibleWcdmaBands = visibleWcdmaBands,
+            visibleLteBands = visibleLteBands,
+            visibleNrSaBands = visibleNrSaBands,
+            visibleNrNsaBands = visibleNrNsaBands,
+            onSave = onBandVisibilitySave,
+            onBack = { showSettings = false },
+            contentPadding = contentPadding
+        )
+        return
     }
 
-    // SmallTopAppBar always applies the top system-bar inset itself. Applying
-    // the scaffold's top padding here would count that inset twice.
-    Box(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+        TopAppBar(
+            title = { Text("Shannon Band Menu") },
+            actions = {
+                AppOverflowMenu(
+                    settingsEnabled = hardware != null,
+                    onSettings = { if (hardware != null) showSettings = true },
+                    debugEnabled = debugEnabled,
+                    onDebugToggle = onDebugToggle
+                )
+            }
+        )
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
         if (isLoading || hardware == null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -277,51 +282,18 @@ fun BandLockScreen(
                 onApply(selectedSim, state, profile)
             }
             Box(modifier = Modifier.fillMaxSize()) {
-                PullToRefresh(
+                PullToRefreshBox(
                     isRefreshing = refreshingSlots.contains(selectedSim),
                     onRefresh = { onRefresh(selectedSim) },
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = topBarHeight)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(top = topBarHeight)
-                            .padding(bottom = navbarSpace + applyResetSpace)
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 96.dp)
                     ) {
-                        fun buildCurrentSimState(slotIndex: Int): SimState {
-                            val s = slotStates[slotIndex]
-                            val isNrActive = s.ratChecked[RatType.NR] == true
-                            val isLteActive = s.ratChecked[RatType.LTE] == true
-                            val isWcdmaActive = s.ratChecked[RatType.WCDMA] == true
-                            val isGsmActive = s.ratChecked[RatType.GSM] == true
-                            val nrBands = if (isNrActive) s.nrChecked.filterValues { it }.keys.intersect(displayHardware.nr) else emptySet()
-                            val nrNsaBands = if (isNrActive) (if (useIndependentLock) s.nrNsaChecked.filterValues { it }.keys.intersect(displayNrNsa) else nrBands) else emptySet()
-                            val nrSaBands = if (isNrActive) (if (useIndependentLock) s.nrSaChecked.filterValues { it }.keys.intersect(displayNrSa) else nrBands) else emptySet()
-                            val lteBands = if (isLteActive) s.lteChecked.filterValues { it }.keys.intersect(displayHardware.lte) else emptySet()
-                            val wcdmaBands = if (isWcdmaActive) {
-                                val checked = s.wcdmaChecked.filterValues { it }.keys.intersect(displayHardware.wcdma)
-                                if (checked.isNotEmpty()) checked else displayHardware.wcdma
-                            } else {
-                                setOf(5) // Workaround: enable just WCDMA Band V when WCDMA is deselected
-                            }
-                            val gsmBands = if (isGsmActive) s.gsmChecked.filterValues { it }.keys.intersect(displayHardware.gsm) else emptySet()
-
-                            return SimState(
-                                ratMask = s.ratChecked.filterValues { it }.keys,
-                                gsmBands = gsmBands,
-                                wcdmaBands = wcdmaBands,
-                                lteBands = lteBands,
-                                nrNsaBands = nrNsaBands,
-                                nrSaBands = nrSaBands,
-                                nrMode = if (isNrActive) {
-                                    if (s.nrMode == NrMode.DISABLE || s.nrMode == NrMode.UNKNOWN)
-                                        s.lastEnabledNrMode.enabledOrBoth() else s.nrMode
-                                } else NrMode.DISABLE
-                            )
-                        }
-
                         // Single SIM view for Shannon (SIM 1)
                         val simState = modemState!!.sim1
                         val refreshKey = refreshKey0
@@ -340,52 +312,34 @@ fun BandLockScreen(
                     }
                 }
 
-                if (backdrop != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.6f))
-                    ) {
-                        SmallTopAppBar(title = "Bands", color = Color.Transparent)
-                    }
-                } else {
-                    SmallTopAppBar(title = "Bands")
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = navbarSpace + 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                TextButton(
-                    text = "Reset",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onReset(selectedSim)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-                )
-                Button(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        applyNow()
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .border(1.dp, MiuixTheme.colorScheme.outline, RoundedCornerShape(16.dp)),
-                    colors = ButtonDefaults.buttonColorsPrimary()
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    tonalElevation = 3.dp
                 ) {
-                    Text("Apply")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                onReset(selectedSim)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Reset") }
+                        Button(
+                            onClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                applyNow()
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Apply") }
+                    }
                 }
             }
         }
     }
+}
 }
 
 @Composable
@@ -542,7 +496,6 @@ private fun SimBandLockPage(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        SmallTitle("RAT lock")
         val supportedRats = BandConstants.ALL_RAT_TYPES.filter { rt ->
             when (rt) {
                 RatType.GSM -> hardware.gsm.isNotEmpty()
@@ -650,7 +603,6 @@ private fun SimBandLockPage(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        SmallTitle("Band lock")
         Spacer(modifier = Modifier.height(4.dp))
 
         var recentlyClicked by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
@@ -833,52 +785,153 @@ internal fun BandCheckboxGrid(
     enabled: Boolean = true,
     onSelectionChanged: () -> Unit = {}
 ) {
-    val density = LocalDensity.current
-    // Keep a little breathing room between rows without making the grid too tall.
-    val rowMargin = with(density) { 5f.toDp() }
-    val rowCount = (bands.size + 3) / 4
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 8.dp, vertical = 8.dp)
-            .then(if (enabled) Modifier else Modifier.alpha(0.38f))
-    ) {
-        bands.chunked(4).forEachIndexed { index, group ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        top = if (index == 0) 0.dp else rowMargin,
-                        bottom = if (index == rowCount - 1) 0.dp else rowMargin
-                    ),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                group.forEach { band ->
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val isChecked = checked[band] == true
-                        Checkbox(
-                            state = if (isChecked) ToggleableState.On else ToggleableState.Off,
-                            onClick = if (enabled) {
-                                {
-                                    checked[band] = checked[band] != true
-                                    onSelectionChanged()
-                                }
-                            } else null
-                        )
-                        Text(
-                            text = "$prefix$band",
-                            style = MiuixTheme.textStyles.body1,
-                            color = if (enabled) MiuixTheme.colorScheme.onBackground else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-                        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // Four columns are the normal layout. As the card narrows (for
+        // example in split-screen), reduce the count before labels can wrap.
+        val columnCount = (maxWidth / 100.dp).toInt().coerceIn(1, 4)
+        val rowMargin = 3.75.dp
+        val rowCount = (bands.size + columnCount - 1) / columnCount
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .then(if (enabled) Modifier else Modifier.alpha(0.38f))
+        ) {
+            bands.chunked(columnCount).forEachIndexed { index, group ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            top = if (index == 0) 0.dp else rowMargin,
+                            bottom = if (index == rowCount - 1) 0.dp else rowMargin
+                        ),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    group.forEach { band ->
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val isChecked = checked[band] == true
+                            Checkbox(
+                                modifier = Modifier.size(32.dp),
+                                checked = isChecked,
+                                onCheckedChange = if (enabled) {
+                                    { value ->
+                                        checked[band] = value
+                                        onSelectionChanged()
+                                    }
+                                } else null
+                            )
+                            Text(
+                                text = "$prefix$band",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 16.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                    repeat(columnCount - group.size) {
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
-                repeat(4 - group.size) {
-                    Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+private data class DropdownItem(
+    val text: String,
+    val selected: Boolean = false,
+    val onClick: () -> Unit
+)
+
+private data class DropdownEntry(val items: List<DropdownItem>)
+
+@Composable
+private fun SmallTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun WindowDropdownPreference(
+    entries: List<DropdownEntry>,
+    title: String,
+    summary: String,
+    showValue: Boolean,
+    collapseOnSelection: Boolean
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Outlined.ArrowDropDown, contentDescription = "Open $title")
+        }
+        // Use a tiny anchor at the card's trailing edge so the popup's
+        // position provider right-aligns the menu with the card.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(1.dp)
+        ) {
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                entries.flatMap { it.items }.forEach { item ->
+                    DropdownMenuItem(
+                        text = { Text(item.text) },
+                        trailingIcon = {
+                            if (item.selected) Icon(Icons.Outlined.Check, contentDescription = null)
+                        },
+                        onClick = {
+                            item.onClick()
+                            if (collapseOnSelection) expanded = false
+                        }
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TabRowWithContour(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        tabs.forEachIndexed { index, title ->
+            SegmentedButton(
+                selected = selectedTabIndex == index,
+                onClick = { onTabSelected(index) },
+                // Keep this selector flush and rectangular instead of using
+                // Material 3's default pill-shaped item contours.
+                shape = RoundedCornerShape(0.dp),
+                // The selected background already communicates the active mode;
+                // do not add Material 3's default check icon.
+                icon = {},
+                label = { Text(title) }
+            )
         }
     }
 }

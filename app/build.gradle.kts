@@ -11,8 +11,8 @@ android {
         applicationId = "fronsipswu.shannonbandmenu"
         minSdk = 30
         targetSdk = 37
-        versionCode = 82
-        versionName = "6.0.0"
+        versionCode = 84
+        versionName = "6.1.0"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -21,8 +21,8 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -88,16 +88,8 @@ dependencies {
 
     // Compose UI
     implementation(libs.androidx.compose.ui)
-
-    // Miuix
-    val miuixVersion = "0.9.3"
-    implementation("top.yukonga.miuix.kmp:miuix-ui:$miuixVersion")
-    implementation("top.yukonga.miuix.kmp:miuix-preference:$miuixVersion")
-    implementation("top.yukonga.miuix.kmp:miuix-icons:$miuixVersion")
-
-    // Backdrop / Liquid glass
-    val backdropVersion = "1.0.6"
-    implementation("io.github.kyant0:backdrop:$backdropVersion")
+    implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.material:material-icons-core")
 
     // libsu — root shell (for launching daemon)
     val libsuVersion = "6.0.0"

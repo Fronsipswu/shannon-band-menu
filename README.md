@@ -13,14 +13,16 @@ A root Android app for locking bands on Shannon Google Pixels. Supports GSM, WCD
 
 ## Building
 
-Open the `app/` folder in Android Studio, or run:
+The Android app uses Material 3 and requires JDK 17. Open the `app/` folder in Android Studio, or run a clean build from the command line:
 
-```
+```shell
 cd app
-./gradlew assembleDebug
+./gradlew clean assembleDebug
 ```
 
-The APK is output to `app/build/outputs/apk/debug/`.
+On Windows PowerShell, use `./gradlew.bat clean assembleDebug` instead. The debug APK is output to `app/build/outputs/apk/debug/ShannonBandMenu-debug.apk` and is minified and resource-shrunk.
+
+For a release build, run `./gradlew clean assembleRelease`. The output in `app/build/outputs/apk/release/` must be signed with your release key before distribution.
 
 ### Standalone command-line build
 
@@ -38,10 +40,10 @@ Release identity comes from `PROGRAM_VERSION` in the source and the correspondin
 
 1. Install the APK and grant root access.
 2. Select the RATs and bands you want on the **Bands** page and tap **Apply**. **Reset** restores defaults.
-3. Use **Info > Settings** to filter which bands appear on the main page and are included when applying.
+3. Use the overflow menu's **Band display settings** option to filter which bands appear on the main page and are included when applying.
 
 Bands hidden by the settings filter are excluded from Apply, but the modem capability query itself is never changed.
 
 ## Acknowledgements
 
-UI by [@h3nnes](https://github.com/h3nnes), built with the miuix framework, libsu and AndroidLiquidGlass.
+Base UI design by [@h3nnes](https://github.com/h3nnes). Built with Material 3 and libsu.
