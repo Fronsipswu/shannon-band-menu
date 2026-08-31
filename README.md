@@ -2,6 +2,9 @@
 
 A root Android app for locking bands on Shannon Google Pixels. Supports GSM, WCDMA, LTE and NR (SA/NSA) band selection, RAT locks, and NR mode switching, backed by a native daemon (`shannon-bandlockd`) that talks to the modem over root shell.
 
+<img width="300" alt="image" src="https://github.com/user-attachments/assets/d55a31db-3080-47db-af61-6368d3f5aae1" />
+
+
 ## Requirements
 
 - Root access (Magisk/KernelSU)
