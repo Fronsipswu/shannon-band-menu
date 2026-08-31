@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui
+package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -29,8 +29,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import dev.qcom.bandmenu.ui.component.FloatingBottomBar
-import dev.qcom.bandmenu.ui.component.FloatingBottomBarItem
+import fronsipswu.shannonbandmenu.ui.component.FloatingBottomBar
+import fronsipswu.shannonbandmenu.ui.component.FloatingBottomBarItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -42,15 +42,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun MainScreen(
-    onApply: (Int, dev.qcom.bandmenu.SimState, dev.qcom.bandmenu.SimState) -> Unit,
+    onApply: (Int, fronsipswu.shannonbandmenu.SimState, fronsipswu.shannonbandmenu.SimState) -> Unit,
     onReset: (Int) -> Unit,
-    onModeChange: (Int, dev.qcom.bandmenu.NrMode) -> Unit = { _, _ -> },
+    onModeChange: (Int, fronsipswu.shannonbandmenu.NrMode) -> Unit = { _, _ -> },
     refreshingSlots: Set<Int>,
     onRefresh: (Int) -> Unit,
     refreshKey0: Int,
     refreshKey1: Int,
-    modemState: dev.qcom.bandmenu.ModemState?,
-    desiredProfile: dev.qcom.bandmenu.SimState?,
+    modemState: fronsipswu.shannonbandmenu.ModemState?,
+    desiredProfile: fronsipswu.shannonbandmenu.SimState?,
     isLoading: Boolean,
     showRootDeniedDialog: Boolean,
     onRootRetry: () -> Unit,

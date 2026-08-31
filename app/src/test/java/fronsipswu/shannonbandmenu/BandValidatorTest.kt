@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu
+package fronsipswu.shannonbandmenu
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

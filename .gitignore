@@ -3,11 +3,10 @@
 **/build/
 local.properties
 *.apk
-!/ShannonBandMenu.apk
 *.aab
 .idea/
 *.iml
 .DS_Store
 Thumbs.db
 *.py
-*.apk
+/shannon-band-menu

@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui.component.animation
+package fronsipswu.shannonbandmenu.ui.component.animation
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring

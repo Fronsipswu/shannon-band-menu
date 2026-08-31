@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu
+package fronsipswu.shannonbandmenu
 
 import android.content.Context
 import android.net.LocalSocket

@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui
+package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -39,9 +39,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
-import dev.qcom.bandmenu.CellLockState
-import dev.qcom.bandmenu.ModemState
-import dev.qcom.bandmenu.PlmnLockState
+import fronsipswu.shannonbandmenu.CellLockState
+import fronsipswu.shannonbandmenu.ModemState
+import fronsipswu.shannonbandmenu.PlmnLockState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator

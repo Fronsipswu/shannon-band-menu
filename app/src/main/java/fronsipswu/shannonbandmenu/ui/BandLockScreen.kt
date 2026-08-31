@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui
+package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,13 +39,13 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
-import dev.qcom.bandmenu.BandConstants
-import dev.qcom.bandmenu.BandProfileResolver
-import dev.qcom.bandmenu.HardwareBands
-import dev.qcom.bandmenu.ModemState
-import dev.qcom.bandmenu.NrMode
-import dev.qcom.bandmenu.RatType
-import dev.qcom.bandmenu.SimState
+import fronsipswu.shannonbandmenu.BandConstants
+import fronsipswu.shannonbandmenu.BandProfileResolver
+import fronsipswu.shannonbandmenu.HardwareBands
+import fronsipswu.shannonbandmenu.ModemState
+import fronsipswu.shannonbandmenu.NrMode
+import fronsipswu.shannonbandmenu.RatType
+import fronsipswu.shannonbandmenu.SimState
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card

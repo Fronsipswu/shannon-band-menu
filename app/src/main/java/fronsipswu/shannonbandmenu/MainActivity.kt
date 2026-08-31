@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu
+package fronsipswu.shannonbandmenu
 
 import android.os.Bundle
 import android.os.Handler
@@ -15,8 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.datastore.preferences.preferencesDataStore
-import dev.qcom.bandmenu.ui.MainScreen
-import dev.qcom.bandmenu.ui.CellLockResult
+import fronsipswu.shannonbandmenu.ui.MainScreen
+import fronsipswu.shannonbandmenu.ui.CellLockResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -60,7 +60,7 @@ private fun bandReadbackMismatch(expected: SimState, actual: SimState): String? 
 class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val TAG = "QcomBand"
+        private const val TAG = "ShannonBand"
     }
 
     private val daemonManager by lazy { DaemonManager(applicationContext) }

@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu
+package fronsipswu.shannonbandmenu
 
 import org.json.JSONArray
 import org.json.JSONObject

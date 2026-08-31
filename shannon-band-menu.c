@@ -1,5 +1,6 @@
 /*
- * Shannon Band Menu V6 — Direct AT-NV Backend (CFUN-free menu apply; app 5.1.0 parity)
+ * Shannon Band Menu - Direct AT/NV Backend
+ * Standalone release 6.0.0 (CFUN-free modem-menu apply)
  * Google Tensor / Samsung Shannon Modem Direct NV Band Manager
  * Runs standalone without libc/Termux dependencies on ARM64 Linux / Android.
  */
@@ -49,6 +50,7 @@ typedef int bool;
 #define MAX_OPS 12
 #define AT_TIMEOUT_MS 3000
 #define AT_BUF_SIZE 4096
+#define PROGRAM_VERSION "6.0.0"
 
 struct timespec { i64 tv_sec; i64 tv_nsec; };
 struct pollfd { int fd; short events; short revents; };
@@ -127,6 +129,14 @@ struct family_state {
     int valid;
 };
 
+enum band_spec { SPEC_LIST, SPEC_ALL, SPEC_NONE };
+
+struct saved_family {
+    u8 mask[MASK_BYTES];
+    enum band_spec spec;
+    int valid;
+};
+
 struct app_state {
     struct family_state lte;
     struct family_state nsa;
@@ -138,6 +148,12 @@ struct app_state {
     u8 supported_gsm[MASK_BYTES];
     u8 supported_sa[MASK_BYTES];
     u32 supported_sa_count;
+    /* RAT-off encodings are deliberately blank/dummy values. Keep the last
+     * usable selection separately so a later `rat ...` command can restore it
+     * instead of unexpectedly enabling every supported band. */
+    struct saved_family saved_lte;
+    struct saved_family saved_wcdma;
+    struct saved_family saved_gsm;
     int mode;           /* 0: SA+NSA, 1: NSA only, 2: SA only, 3: Disabled/LTE only */
     int mode_known;
     int vonr_state;     /* 1: ON, 0: OFF, -1: Default (0xFF), -2: unknown */
@@ -458,8 +474,6 @@ static int read_lte_state(void){
     return 0;
 }
 
-enum band_spec { SPEC_LIST, SPEC_ALL, SPEC_NONE };
-
 static int write_lte_state(const u8 *mask, enum band_spec spec){
     u8 enb[1];
     if(spec == SPEC_ALL){
@@ -768,26 +782,11 @@ fail:
     return-1;
 }
 
-static int write_nr_mode_nv_unused(int mode){
-    u8 mode_bytes[1];
-    if(mode == 0){
-        mode_bytes[0] = 0x11; /* SA + NSA */
-    } else if(mode == 1){
-        mode_bytes[0] = 0x01; /* NSA only */
-    } else if(mode == 2){
-        mode_bytes[0] = 0x10; /* SA only */
-    } else {
-        mode_bytes[0] = 0x00; /* Disable NR */
-    }
-    return googsetnv("NR.CONFIG.MODE", 0, mode_bytes, 1);
-}
-
 /* NR mode is applied by the modem's menu handler. The NV lands a variable
  * moment after the keypresses, so poll the AT channel rather than trusting a
  * single immediate readback. */
 static int write_nr_mode(int mode){
     int attempt;
-    (void)write_nr_mode_nv_unused; /* direct NV write is intentionally unused */
     if(menu_set_nr_mode(mode)<0)return-1;
     for(attempt=0;attempt<MENU_VERIFY_TRIES;attempt++){
         if(read_nr_mode()==0 && S.mode_known && S.mode==mode)return 0;
@@ -947,6 +946,22 @@ static int write_gsm_state(const u8 *mask, enum band_spec spec){
     return googsetnv("GL3.Operator Specific Band", 0, val, 1);
 }
 
+static void remember_active_family(
+    struct saved_family *saved,
+    const struct family_state *current
+){
+    if(!current->valid || !mask_any(current->mask)) return;
+    copy(saved->mask, current->mask, MASK_BYTES);
+    saved->spec = current->manual_enabled ? SPEC_LIST : SPEC_ALL;
+    saved->valid = 1;
+}
+
+static void remember_active_rat_masks(void){
+    remember_active_family(&S.saved_lte, &S.lte);
+    remember_active_family(&S.saved_wcdma, &S.wcdma);
+    remember_active_family(&S.saved_gsm, &S.gsm);
+}
+
 /* Full state refresh */
 static int refresh_all_state(void){
     int ok = 1;
@@ -958,6 +973,7 @@ static int refresh_all_state(void){
     if(read_wcdma_state() < 0) ok = 0;
     if(read_gsm_state() < 0) ok = 0;
     if(read_vonr_state() < 0) ok = 0;
+    remember_active_rat_masks();
     return ok;
 }
 
@@ -1085,7 +1101,7 @@ static void print_state(void){
  * state block off a phone-sized viewport if re-printed on every command. */
 static void draw(void){
     out("=========================\n");
-    out("Shannon Band Menu V6\n");
+    out("Shannon Band Menu " PROGRAM_VERSION "\n");
     out("=========================\n");
     print_usage_examples();
     print_state();
@@ -1105,6 +1121,7 @@ static void help(void){
     out("  apply | refresh | restart\n");
     out("  help | exit\n\n");
     out("Writes are validated first, unchanged families are skipped, then the NR mode is re-applied through the modem menu.\n");
+    out("Run `rat` by itself. Re-enabled GSM/WCDMA/LTE families restore their last usable mask for this session.\n");
     out("SA/NSA 'none' clears the manual list (active-mode readback becomes Auto/All).\n\n");
 }
 
@@ -1112,100 +1129,206 @@ static int sep(char c){return c==','||c==' '||c=='\t';}
 static int puint(const char*s,u32*v){u32 n=0;int d=0;while(*s){if(*s<'0'||*s>'9')return 0;n=n*10u+(u32)(*s-'0');if(n>10000)return 0;s++;d++;}*v=n;return d>0;}
 static int plist(char*s,u8*mask,u32 max){char*p=s,*a;u32 x;zero(mask,MASK_BYTES);while(*p){while(*p&&sep(*p))p++;if(!*p)break;a=p;while(*p&&!sep(*p))p++;if(*p)*p++=0;if(!puint(a,&x)||x<1||x>max)return 0;mask_set(mask,x);}return mask_any(mask);}
 
-enum op_type{OP_LTE,OP_NSA,OP_SA,OP_WCDMA,OP_GSM,OP_MODE,OP_VONR,OP_RAT};
-struct op{enum op_type type;enum band_spec spec;u8 mask[MASK_BYTES];int mode;u32 rat_mask;};
-static int wordeq(const char*s,u32 n,const char*w){u32 i=0;while(w[i]&&i<n&&s[i]==w[i])i++;return i==n&&w[i]==0;}
-static int command_word(const char*s,u32 n){return wordeq(s,n,"lte")||wordeq(s,n,"nr")||wordeq(s,n,"nsa")||wordeq(s,n,"sa")||wordeq(s,n,"wcdma")||wordeq(s,n,"gsm")||wordeq(s,n,"mode")||wordeq(s,n,"vonr")||wordeq(s,n,"rat");}
+enum op_type { OP_LTE, OP_NSA, OP_SA, OP_WCDMA, OP_GSM, OP_MODE, OP_VONR, OP_RAT };
 
-static int fill_band_op(struct op*o,enum op_type type,const char*arg){
-    zero(o,sizeof(*o));o->type=type;
-    if(eq_ci(arg,"all")){o->spec=SPEC_ALL;return 1;}
-    if(eq_ci(arg,"none")){o->spec=SPEC_NONE;return 1;}
-    o->spec=SPEC_LIST;
-    {char tmp[512];copy_text(tmp,sizeof(tmp),arg);return plist(tmp,o->mask,type==OP_WCDMA?32:(type==OP_GSM?2000:(type==OP_LTE?256:512)));}
+struct op {
+    enum op_type type;
+    enum band_spec spec;
+    u8 mask[MASK_BYTES];
+    int mode;
+    u32 rat_mask;
+};
+
+static int wordeq(const char *text, u32 length, const char *word){
+    u32 i = 0;
+    while(word[i] && i < length && text[i] == word[i]) i++;
+    return i == length && word[i] == 0;
 }
 
-static int parse_ops(char*l,struct op*ops,int*count){
-    u32 pos=0,len=(u32)slen(l);int c=0;
-    int is_rat=0;
-    while(pos<len){
-        u32 cs,ce,as,ae,i,j;char cmd[16],arg[512];
-        while(pos<len&&(l[pos]==' '||l[pos]=='\t'||l[pos]==';'))pos++;
-        if(pos>=len)break;
-        cs=pos;while(pos<len&&l[pos]!=' '&&l[pos]!='\t'&&l[pos]!=';')pos++;ce=pos;
-        if(!command_word(l+cs,ce-cs))return 0;
-        is_rat = wordeq(l+cs,ce-cs,"rat");
-        while(pos<len&&(l[pos]==' '||l[pos]=='\t'))pos++;
-        if(pos>=len||l[pos]==';')return 0;
-        as=pos;ae=len;
-        for(i=pos;i<len;i++){
-            if(l[i]==';'){ae=i;break;}
-            if(l[i]==' '||l[i]=='\t'){
-                u32 k=i;while(k<len&&(l[k]==' '||l[k]=='\t'))k++;
-                if(k<len&&l[k]!=';'){
-                    u32 we=k;while(we<len&&l[we]!=' '&&l[we]!='\t'&&l[we]!=';')we++;
-                    /* "rat gsm wcdma lte nr" names RATs as plain words, so the
-                     * arg must not stop at the next command word for rat. */
-                    if(!is_rat && command_word(l+k,we-k)){ae=i;break;}
-                }
-            }
-        }
-        while(ae>as&&(l[ae-1]==' '||l[ae-1]=='\t'))ae--;
-        i=0;for(j=cs;j<ce&&i+1<sizeof(cmd);j++)cmd[i++]=l[j];cmd[i]=0;
-        i=0;for(j=as;j<ae&&i+1<sizeof(arg);j++)arg[i++]=l[j];arg[i]=0;
-        if(eq(cmd,"nr")){
-            if(c+2>MAX_OPS)return 0;
-            if(!fill_band_op(&ops[c],OP_SA,arg))return 0;
-            ops[c+1]=ops[c];ops[c+1].type=OP_NSA;c+=2;
-        }else if(eq(cmd,"mode")){
-            if(c>=MAX_OPS)return 0;zero(&ops[c],sizeof(ops[c]));ops[c].type=OP_MODE;
-            if(eq_ci(arg,"both")||eq_ci(arg,"sa+nsa")||eq_ci(arg,"nsa+sa"))ops[c].mode=0;
-            else if(eq_ci(arg,"nsa"))ops[c].mode=1;
-            else if(eq_ci(arg,"sa"))ops[c].mode=2;
-            else if(eq_ci(arg,"disable")||eq_ci(arg,"off")||eq_ci(arg,"lte"))ops[c].mode=3;
-            else return 0;c++;
-        }else if(eq(cmd,"vonr")){
-            if(c>=MAX_OPS)return 0;zero(&ops[c],sizeof(ops[c]));ops[c].type=OP_VONR;
-            if(eq_ci(arg,"on")||eq_ci(arg,"1")||eq_ci(arg,"enable"))ops[c].mode=1;
-            else if(eq_ci(arg,"off")||eq_ci(arg,"0")||eq_ci(arg,"disable"))ops[c].mode=0;
-            else if(eq_ci(arg,"def")||eq_ci(arg,"default")||eq_ci(arg,"auto"))ops[c].mode=-1;
-            else return 0;c++;
-        }else if(eq(cmd,"rat")){
-            if(c>=MAX_OPS)return 0;zero(&ops[c],sizeof(ops[c]));ops[c].type=OP_RAT;
-            {
-                /* rat_mask bits: 1=GSM, 2=WCDMA, 4=LTE, 8=NR */
-                u32 m=0;char*a=arg;int tok=0,exclusive=0;
-                while(*a){
-                    char*toks;u32 tlen;
-                    while(*a&&sep(*a))a++;
-                    if(!*a)break;
-                    toks=a;while(*a&&!sep(*a))a++;
-                    tlen=(u32)(a-toks);
-                    if(wordeq(toks,tlen,"gsm")){m|=1u;tok++;}
-                    else if(wordeq(toks,tlen,"wcdma")){m|=2u;tok++;}
-                    else if(wordeq(toks,tlen,"lte")){m|=4u;tok++;}
-                    else if(wordeq(toks,tlen,"nr")){m|=8u;tok++;}
-                    else if(wordeq(toks,tlen,"all")){if(tok||exclusive)return 0;m=0xFu;exclusive=1;tok++;}
-                    else if(wordeq(toks,tlen,"none")){if(tok||exclusive)return 0;m=0u;exclusive=1;tok++;}
-                    else return 0;
-                }
-                if(!tok)return 0;
-                ops[c].rat_mask=m;
-            }
-            c++;
-        }else{
-            enum op_type type;
-            if(c>=MAX_OPS)return 0;
-            if(eq(cmd,"lte"))type=OP_LTE;
-            else if(eq(cmd,"nsa"))type=OP_NSA;
-            else if(eq(cmd,"sa"))type=OP_SA;
-            else if(eq(cmd,"wcdma"))type=OP_WCDMA;
-            else type=OP_GSM;
-            if(!fill_band_op(&ops[c],type,arg))return 0;c++;
-        }
-        pos=ae;
+static int command_word(const char *text, u32 length){
+    return wordeq(text, length, "lte") || wordeq(text, length, "nr") ||
+        wordeq(text, length, "nsa") || wordeq(text, length, "sa") ||
+        wordeq(text, length, "wcdma") || wordeq(text, length, "gsm") ||
+        wordeq(text, length, "mode") || wordeq(text, length, "vonr") ||
+        wordeq(text, length, "rat");
+}
+
+static void copy_span(char *dst, usize capacity, const char *src, u32 length){
+    u32 i = 0;
+    if(capacity == 0) return;
+    while(i < length && i + 1 < capacity){
+        dst[i] = src[i];
+        i++;
     }
-    *count=c;return c>0;
+    dst[i] = 0;
+}
+
+static int fill_band_op(struct op *op, enum op_type type, const char *arg){
+    char list[512];
+    u32 max_band;
+
+    zero(op, sizeof(*op));
+    op->type = type;
+    if(eq_ci(arg, "all")){
+        op->spec = SPEC_ALL;
+        return 1;
+    }
+    if(eq_ci(arg, "none")){
+        op->spec = SPEC_NONE;
+        return 1;
+    }
+
+    max_band = type == OP_WCDMA ? 32 :
+        (type == OP_GSM ? 2000 : (type == OP_LTE ? 256 : 512));
+    op->spec = SPEC_LIST;
+    copy_text(list, sizeof(list), arg);
+    return plist(list, op->mask, max_band);
+}
+
+static int parse_mode_arg(const char *arg, int *mode){
+    if(eq_ci(arg, "both") || eq_ci(arg, "sa+nsa") || eq_ci(arg, "nsa+sa")) *mode = 0;
+    else if(eq_ci(arg, "nsa")) *mode = 1;
+    else if(eq_ci(arg, "sa")) *mode = 2;
+    else if(eq_ci(arg, "disable") || eq_ci(arg, "off") || eq_ci(arg, "lte")) *mode = 3;
+    else return 0;
+    return 1;
+}
+
+static int parse_vonr_arg(const char *arg, int *state){
+    if(eq_ci(arg, "on") || eq_ci(arg, "1") || eq_ci(arg, "enable")) *state = 1;
+    else if(eq_ci(arg, "off") || eq_ci(arg, "0") || eq_ci(arg, "disable")) *state = 0;
+    else if(eq_ci(arg, "def") || eq_ci(arg, "default") || eq_ci(arg, "auto")) *state = -1;
+    else return 0;
+    return 1;
+}
+
+static int parse_rat_arg(char *arg, u32 *rat_mask){
+    u32 mask = 0;
+    int token_count = 0;
+    int exclusive = 0;
+    char *cursor = arg;
+
+    while(*cursor){
+        char *token;
+        u32 token_length;
+
+        while(*cursor && sep(*cursor)) cursor++;
+        if(!*cursor) break;
+        if(exclusive) return 0;
+
+        token = cursor;
+        while(*cursor && !sep(*cursor)) cursor++;
+        token_length = (u32)(cursor - token);
+
+        if(wordeq(token, token_length, "gsm")) mask |= 1u;
+        else if(wordeq(token, token_length, "wcdma")) mask |= 2u;
+        else if(wordeq(token, token_length, "lte")) mask |= 4u;
+        else if(wordeq(token, token_length, "nr")) mask |= 8u;
+        else if(wordeq(token, token_length, "all")){
+            if(token_count != 0) return 0;
+            mask = 0xFu;
+            exclusive = 1;
+        } else if(wordeq(token, token_length, "none")){
+            if(token_count != 0) return 0;
+            mask = 0u;
+            exclusive = 1;
+        } else return 0;
+        token_count++;
+    }
+
+    if(token_count == 0) return 0;
+    *rat_mask = mask;
+    return 1;
+}
+
+static int parse_ops(char *line, struct op *ops, int *count){
+    u32 position = 0;
+    u32 line_length = (u32)slen(line);
+    int op_count = 0;
+
+    while(position < line_length){
+        u32 command_start, command_end, arg_start, arg_end, i;
+        char command[16], arg[512];
+        int is_rat;
+
+        while(position < line_length &&
+            (line[position] == ' ' || line[position] == '\t' || line[position] == ';')) position++;
+        if(position >= line_length) break;
+
+        command_start = position;
+        while(position < line_length && line[position] != ' ' &&
+            line[position] != '\t' && line[position] != ';') position++;
+        command_end = position;
+        if(!command_word(line + command_start, command_end - command_start)) return 0;
+        is_rat = wordeq(line + command_start, command_end - command_start, "rat");
+
+        while(position < line_length && (line[position] == ' ' || line[position] == '\t')) position++;
+        if(position >= line_length || line[position] == ';') return 0;
+
+        arg_start = position;
+        arg_end = line_length;
+        for(i = position; i < line_length; i++){
+            if(line[i] == ';'){
+                arg_end = i;
+                break;
+            }
+            if(!is_rat && (line[i] == ' ' || line[i] == '\t')){
+                u32 next = i;
+                u32 next_end;
+                while(next < line_length && (line[next] == ' ' || line[next] == '\t')) next++;
+                next_end = next;
+                while(next_end < line_length && line[next_end] != ' ' &&
+                    line[next_end] != '\t' && line[next_end] != ';') next_end++;
+                if(command_word(line + next, next_end - next)){
+                    arg_end = i;
+                    break;
+                }
+            }
+        }
+        while(arg_end > arg_start && (line[arg_end - 1] == ' ' || line[arg_end - 1] == '\t')) arg_end--;
+
+        copy_span(command, sizeof(command), line + command_start, command_end - command_start);
+        copy_span(arg, sizeof(arg), line + arg_start, arg_end - arg_start);
+
+        if(eq(command, "nr")){
+            if(op_count + 2 > MAX_OPS || !fill_band_op(&ops[op_count], OP_SA, arg)) return 0;
+            ops[op_count + 1] = ops[op_count];
+            ops[op_count + 1].type = OP_NSA;
+            op_count += 2;
+        } else if(eq(command, "mode")){
+            if(op_count >= MAX_OPS) return 0;
+            zero(&ops[op_count], sizeof(ops[op_count]));
+            ops[op_count].type = OP_MODE;
+            if(!parse_mode_arg(arg, &ops[op_count].mode)) return 0;
+            op_count++;
+        } else if(eq(command, "vonr")){
+            if(op_count >= MAX_OPS) return 0;
+            zero(&ops[op_count], sizeof(ops[op_count]));
+            ops[op_count].type = OP_VONR;
+            if(!parse_vonr_arg(arg, &ops[op_count].mode)) return 0;
+            op_count++;
+        } else if(eq(command, "rat")){
+            if(op_count >= MAX_OPS) return 0;
+            zero(&ops[op_count], sizeof(ops[op_count]));
+            ops[op_count].type = OP_RAT;
+            if(!parse_rat_arg(arg, &ops[op_count].rat_mask)) return 0;
+            op_count++;
+        } else {
+            enum op_type type;
+            if(op_count >= MAX_OPS) return 0;
+            if(eq(command, "lte")) type = OP_LTE;
+            else if(eq(command, "nsa")) type = OP_NSA;
+            else if(eq(command, "sa")) type = OP_SA;
+            else if(eq(command, "wcdma")) type = OP_WCDMA;
+            else type = OP_GSM;
+            if(!fill_band_op(&ops[op_count], type, arg)) return 0;
+            op_count++;
+        }
+        position = arg_end;
+    }
+
+    *count = op_count;
+    return op_count > 0;
 }
 
 static struct family_state *op_family(enum op_type type){
@@ -1262,6 +1385,19 @@ static int verify_ops(struct op *ops,int n){
     return 1;
 }
 
+static int restore_or_enable_family(
+    enum op_type type,
+    const struct saved_family *saved
+){
+    const u8 *mask = saved->valid ? saved->mask : NULL;
+    enum band_spec spec = saved->valid ? saved->spec : SPEC_ALL;
+
+    if(type == OP_GSM) return write_gsm_state(mask, spec);
+    if(type == OP_WCDMA) return write_wcdma_state(mask, spec);
+    if(type == OP_LTE) return write_lte_state(mask, spec);
+    return -1;
+}
+
 static int execute_ops(struct op*ops,int n){
     int i;
     int has_changes = 0;
@@ -1281,6 +1417,13 @@ static int execute_ops(struct op*ops,int n){
             setstatus("Rejected unsupported band selection; no NV items were changed.");
             return 0;
         }
+    }
+    /* `rat` consumes a list of family names, so mixing it with band or mode
+     * operations is hard to read and can describe contradictory writes. Keep
+     * it atomic; run any band command separately. */
+    if((seen_types & (1u << (u32)OP_RAT)) && n != 1){
+        setstatus("RAT selection must be a standalone command; no NV items were changed.");
+        return 0;
     }
 
     /* Compare against a fresh hardware snapshot and skip identical families. */
@@ -1326,21 +1469,30 @@ static int execute_ops(struct op*ops,int n){
             u32 want = ops[i].rat_mask;
             u32 have = rat_active_mask();
             if((want & 1u) != (have & 1u)){
-                if(write_gsm_state(NULL,(want & 1u)?SPEC_ALL:SPEC_NONE) < 0){
+                int result = (want & 1u)
+                    ? restore_or_enable_family(OP_GSM, &S.saved_gsm)
+                    : write_gsm_state(NULL, SPEC_NONE);
+                if(result < 0){
                     setstatus("Failed to toggle GSM RAT.");
                     return 0;
                 }
                 has_changes = 1;
             }
             if((want & 2u) != (have & 2u)){
-                if(write_wcdma_state(NULL,(want & 2u)?SPEC_ALL:SPEC_NONE) < 0){
+                int result = (want & 2u)
+                    ? restore_or_enable_family(OP_WCDMA, &S.saved_wcdma)
+                    : write_wcdma_state(NULL, SPEC_NONE);
+                if(result < 0){
                     setstatus("Failed to toggle WCDMA RAT.");
                     return 0;
                 }
                 has_changes = 1;
             }
             if((want & 4u) != (have & 4u)){
-                if(write_lte_state(NULL,(want & 4u)?SPEC_ALL:SPEC_NONE) < 0){
+                int result = (want & 4u)
+                    ? restore_or_enable_family(OP_LTE, &S.saved_lte)
+                    : write_lte_state(NULL, SPEC_NONE);
+                if(result < 0){
                     setstatus("Failed to toggle LTE RAT.");
                     return 0;
                 }
@@ -1396,7 +1548,7 @@ static int execute_ops(struct op*ops,int n){
     if(has_changes){
         /* The modem menu treats selecting the active NR mode as an idempotent
          * Apply action. It reloads the radio and adopts all preceding NV writes,
-         * so V6 never sends AT+CFUN. */
+         * so this program never sends AT+CFUN. */
         if(write_nr_mode(apply_mode) < 0){
             (void)refresh_all_state();
             setstatus("Configuration written to NV, but modem-menu Apply failed.");
@@ -1487,7 +1639,7 @@ static int run(void){
         print_state();
     }
 
-    out("\nExiting Shannon Band Menu V6...\n");
+    out("\nExiting Shannon Band Menu " PROGRAM_VERSION "...\n");
     at_close();
     return 0;
 }

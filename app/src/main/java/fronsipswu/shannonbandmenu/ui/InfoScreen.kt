@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui
+package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,8 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import dev.qcom.bandmenu.BuildConfig
-import dev.qcom.bandmenu.HardwareBands
+import fronsipswu.shannonbandmenu.BuildConfig
+import fronsipswu.shannonbandmenu.HardwareBands
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon

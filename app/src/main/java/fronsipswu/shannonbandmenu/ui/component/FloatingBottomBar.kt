@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu.ui.component
+package fronsipswu.shannonbandmenu.ui.component
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
@@ -62,7 +62,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
-import dev.qcom.bandmenu.ui.component.animation.DampedDragAnimation
+import fronsipswu.shannonbandmenu.ui.component.animation.DampedDragAnimation
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch

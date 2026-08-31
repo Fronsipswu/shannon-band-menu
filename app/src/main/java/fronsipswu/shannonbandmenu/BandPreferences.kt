@@ -1,4 +1,4 @@
-package dev.qcom.bandmenu
+package fronsipswu.shannonbandmenu
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences

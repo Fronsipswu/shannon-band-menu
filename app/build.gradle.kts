@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "dev.qcom.bandmenu"
+    namespace = "fronsipswu.shannonbandmenu"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.qcom.bandmenu"
+        applicationId = "fronsipswu.shannonbandmenu"
         minSdk = 30
         targetSdk = 37
-        versionCode = 81
-        versionName = "5.1.1"
+        versionCode = 82
+        versionName = "6.0.0"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

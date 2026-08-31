@@ -1,6 +1,6 @@
 # Shannon Band Menu
 
-A root Android app for locking bands on Shannon Google Pixels. Supports GSM, WCDMA, LTE and NR (SA/NSA) band selection, RAT locks, and NR mode switching, backed by a native daemon (`shannon-bandlockd`) that talks to the modem over root shell.
+A root Android app for locking bands on Shannon Google Pixels. Supports GSM, WCDMA, LTE, NR-SA and NR-NSA band selection, RAT locks, and NR mode switching, backed by a native daemon (`shannon-bandlockd`) that talks to the modem over root shell.
 
 <img width="300" alt="image" src="https://github.com/user-attachments/assets/d55a31db-3080-47db-af61-6368d3f5aae1" />
 
@@ -22,6 +22,18 @@ cd app
 
 The APK is output to `app/build/outputs/apk/debug/`.
 
+### Standalone command-line build
+
+The rooted Android/Termux command-line version uses stable release filenames:
+
+```powershell
+$clang = Join-Path $env:ANDROID_NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe'
+& $clang -target aarch64-linux-android34 -O2 -nostdlib -fuse-ld=lld -static `
+    -Wall -Wextra -Werror shannon-band-menu.c -o shannon-band-menu
+```
+
+Release identity comes from `PROGRAM_VERSION` in the source and the corresponding Git tag/release. Do not rename these files to include `v5`, `v6`, or another release number.
+
 ## Usage
 
 1. Install the APK and grant root access.
@@ -30,6 +42,6 @@ The APK is output to `app/build/outputs/apk/debug/`.
 
 Bands hidden by the settings filter are excluded from Apply, but the modem capability query itself is never changed.
 
-## Acknowlegements
+## Acknowledgements
 
 UI by [@h3nnes](https://github.com/h3nnes), built with the miuix framework, libsu and AndroidLiquidGlass.
