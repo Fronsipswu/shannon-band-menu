@@ -22,10 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -34,6 +31,7 @@ import fronsipswu.shannonbandmenu.FrequencyLockState
 import fronsipswu.shannonbandmenu.NrMode
 import fronsipswu.shannonbandmenu.R
 import fronsipswu.shannonbandmenu.SimState
+import kotlinx.coroutines.launch
 
 @Composable
 @Suppress("UNUSED_PARAMETER")
@@ -86,14 +84,12 @@ fun MainScreen(
     visibleNrNsaBands: Set<Int>? = null,
     onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
-    var selectedIndex by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerScope = rememberCoroutineScope()
 
-    LaunchedEffect(selectedIndex) {
-        if (pagerState.targetPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
-    }
-    LaunchedEffect(pagerState.targetPage) {
-        selectedIndex = pagerState.targetPage
+    fun selectPage(page: Int) {
+        if (pagerState.currentPage == page && !pagerState.isScrollInProgress) return
+        pagerScope.launch { pagerState.animateScrollToPage(page) }
     }
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let {
@@ -108,8 +104,19 @@ fun MainScreen(
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
-                    selected = selectedIndex == 0,
-                    onClick = { selectedIndex = 0 },
+                    selected = pagerState.currentPage == 0,
+                    onClick = { selectPage(0) },
+                    icon = {
+                        Icon(
+                            painterResource(R.drawable.ic_network_info),
+                            contentDescription = "Network Info"
+                        )
+                    },
+                    label = { Text("Network") }
+                )
+                NavigationBarItem(
+                    selected = pagerState.currentPage == 1,
+                    onClick = { selectPage(1) },
                     icon = {
                         Icon(
                             painterResource(R.drawable.ic_tune),
@@ -119,8 +126,8 @@ fun MainScreen(
                     label = { Text("Bands") }
                 )
                 NavigationBarItem(
-                    selected = selectedIndex == 1,
-                    onClick = { selectedIndex = 1 },
+                    selected = pagerState.currentPage == 2,
+                    onClick = { selectPage(2) },
                     icon = {
                         Icon(
                             painterResource(R.drawable.ic_cell_lock),
@@ -130,8 +137,8 @@ fun MainScreen(
                     label = { Text("Cell Lock") }
                 )
                 NavigationBarItem(
-                    selected = selectedIndex == 2,
-                    onClick = { selectedIndex = 2 },
+                    selected = pagerState.currentPage == 3,
+                    onClick = { selectPage(3) },
                     icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
                     label = { Text("Info") }
                 )
@@ -162,6 +169,12 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 if (page == 0) {
+                    NetworkInfoScreen(
+                        isActive = pagerState.settledPage == 0 &&
+                            !pagerState.isScrollInProgress,
+                        contentPadding = contentPadding
+                    )
+                } else if (page == 1) {
                     BandLockScreen(
                         modemState = modemState,
                         desiredProfile = desiredProfile,
@@ -184,7 +197,7 @@ fun MainScreen(
                         contentPadding = contentPadding,
                         onBandVisibilitySave = onBandVisibilitySave
                     )
-                } else if (page == 1) {
+                } else if (page == 2) {
                     FrequencyLockScreen(
                         state = frequencyLockState,
                         isRefreshing = frequencyLockRefreshing,
@@ -210,7 +223,9 @@ fun MainScreen(
                 }
             }
 
-            if (isLoading) {
+            if (isLoading && pagerState.settledPage != 0 &&
+                !pagerState.isScrollInProgress
+            ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
