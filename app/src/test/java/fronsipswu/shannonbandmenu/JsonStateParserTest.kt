@@ -219,4 +219,30 @@ class JsonStateParserTest {
         val parsed = JsonStateParser.parseResponse(resp)
         assertTrue(parsed.simState!!.ratMask.isEmpty())
     }
+
+    @Test
+    fun parseFrequencyLockState() {
+        val state = sampleState().put(
+            "frequency_lock",
+            JSONObject()
+                .put("valid", true)
+                .put("lte_earfcns", JSONArray().put(9310).put(38852))
+                .put("lte_pci", 41)
+                .put("nr_arfcn", 529950)
+                .put("nr_pci", JSONObject.NULL)
+        )
+
+        val parsed = JsonStateParser.parseResponse(sampleResponse("query", true, state))
+
+        assertEquals(
+            FrequencyLockState(
+                valid = true,
+                lteEarfcnList = listOf(9310, 38852),
+                ltePci = 41,
+                nrArfcn = 529950,
+                nrPci = null
+            ),
+            parsed.frequencyLockState
+        )
+    }
 }

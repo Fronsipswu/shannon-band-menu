@@ -99,6 +99,14 @@ data class NrIndependentCapability(
     val independentLockSupported: Boolean? = null
 )
 
+data class FrequencyLockState(
+    val valid: Boolean = false,
+    val lteEarfcnList: List<Int> = emptyList(),
+    val ltePci: Int? = null,
+    val nrArfcn: Int? = null,
+    val nrPci: Int? = null
+)
+
 data class ModemState(
     val sim1: SimState = SimState(),
     val sim2: SimState = SimState(),
@@ -108,7 +116,8 @@ data class ModemState(
     val sim2CellLock: CellLockState = CellLockState(),
     val sim1PlmnLock: PlmnLockState = PlmnLockState(),
     val sim2PlmnLock: PlmnLockState = PlmnLockState(),
-    val nrIndependentSupported: Boolean? = null
+    val nrIndependentSupported: Boolean? = null,
+    val frequencyLock: FrequencyLockState = FrequencyLockState()
 )
 
 object BandConstants {
@@ -129,6 +138,7 @@ data class DaemonResponse(
     val cellLockState: CellLockState?,
     val plmnLockState: PlmnLockState? = null,
     val nrIndependentCapability: NrIndependentCapability?,
+    val frequencyLockState: FrequencyLockState?,
     val sim: Int,
     val status: String
 )
@@ -219,6 +229,26 @@ object JsonRequestBuilder {
 
     fun shutdown(): JSONObject = JSONObject().put("cmd", "shutdown")
 
+    fun frequencyLockSet(
+        lteEarfcns: List<Int>,
+        ltePci: Int?,
+        nrArfcn: Int?,
+        nrPci: Int?
+    ): JSONObject {
+        val earfcns = JSONArray()
+        lteEarfcns.forEach(earfcns::put)
+        return JSONObject()
+            .put("cmd", "frequency_lock_set")
+            .put("lte_earfcns", earfcns)
+            .put("lte_pci", ltePci ?: JSONObject.NULL)
+            .put("nr_arfcn", nrArfcn ?: JSONObject.NULL)
+            .put("nr_pci", nrPci ?: JSONObject.NULL)
+    }
+
+    fun frequencyLockRefresh(): JSONObject = JSONObject().put("cmd", "frequency_lock_refresh")
+
+    fun frequencyLockReset(): JSONObject = JSONObject().put("cmd", "frequency_lock_reset")
+
     fun verboseSet(verbose: Boolean): JSONObject =
         JSONObject().put("cmd", "verbose_set").put("verbose", verbose)
 
@@ -283,6 +313,7 @@ object JsonStateParser {
             cellLockState = if (stateJson != null) parseCellLockState(stateJson) else null,
             plmnLockState = if (stateJson != null) parsePlmnLockState(stateJson) else null,
             nrIndependentCapability = if (stateJson != null) parseNrIndependentCapability(stateJson) else null,
+            frequencyLockState = if (stateJson != null) parseFrequencyLockState(stateJson) else null,
             sim = if (stateJson != null) stateJson.optInt("sim", 1) else 1,
             status = if (stateJson != null) stateJson.optString("status", "") else ""
         )
@@ -365,6 +396,25 @@ object JsonStateParser {
         val supported = if (cap.has("independent_lock_supported") && !cap.isNull("independent_lock_supported"))
             cap.optBoolean("independent_lock_supported") else null
         return NrIndependentCapability(checked = checked, independentLockSupported = supported)
+    }
+
+    fun parseFrequencyLockState(state: JSONObject): FrequencyLockState {
+        val lock = state.optJSONObject("frequency_lock") ?: return FrequencyLockState()
+        val earfcns = lock.optJSONArray("lte_earfcns")
+        val values = buildList {
+            if (earfcns != null) {
+                for (index in 0 until earfcns.length()) add(earfcns.optInt(index))
+            }
+        }
+        fun nullableInt(key: String): Int? =
+            if (lock.has(key) && !lock.isNull(key)) lock.optInt(key) else null
+        return FrequencyLockState(
+            valid = lock.optBoolean("valid", false),
+            lteEarfcnList = values,
+            ltePci = nullableInt("lte_pci"),
+            nrArfcn = nullableInt("nr_arfcn"),
+            nrPci = nullableInt("nr_pci")
+        )
     }
 
     private fun parseLteCellLock(json: JSONObject): LteCellLockState {

@@ -60,7 +60,7 @@ typedef __PTRDIFF_TYPE__   isize;
 
 #define CLOCK_MONOTONIC  1
 
-#define DAEMON_VERSION   "4.6.0"
+#define DAEMON_VERSION   "4.7.0"
 #define SOCKET_NAME      "shannon_bandlockd"
 #define ROUTER_PATH      "/dev/umts_router"
 /* The band-lock / NR-mode menu is rendered by the modem itself. Writing
@@ -238,6 +238,20 @@ struct band_state {
     u8 mask[MASK_BYTES];
 };
 
+#define MAX_LTE_EARFCNS 10
+
+struct frequency_lock_state {
+    int valid;
+    u32 lte_earfcns[MAX_LTE_EARFCNS];
+    u32 lte_earfcn_count;
+    int lte_pci_set;
+    u16 lte_pci;
+    int nr_arfcn_set;
+    u32 nr_arfcn;
+    int nr_pci_set;
+    u32 nr_pci;
+};
+
 struct daemon_state {
     int router_fd;
     u32 allowed_uid;
@@ -250,6 +264,7 @@ struct daemon_state {
     struct band_state sa;
     struct band_state nsa;
     enum nr_mode mode;
+    struct frequency_lock_state frequency_lock;
 
     /* Hardware capabilities */
     u8 supported_gsm[MASK_BYTES];
@@ -460,6 +475,138 @@ static int googsetnv(const char *name, int index, const u8 *data, usize len){
     cmd[p] = 0;
 
     return at_exec(cmd, resp, sizeof(resp), AT_TIMEOUT_MS);
+}
+
+static u32 read_le_u32(const u8 *bytes){
+    return (u32)bytes[0] | ((u32)bytes[1] << 8) |
+           ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
+}
+
+static void write_le_u32(u8 *bytes, u32 value){
+    bytes[0] = (u8)(value & 0xff);
+    bytes[1] = (u8)((value >> 8) & 0xff);
+    bytes[2] = (u8)((value >> 16) & 0xff);
+    bytes[3] = (u8)((value >> 24) & 0xff);
+}
+
+/* LTE/NR frequency forcings are read by RRC only during cellular-processor
+ * initialization. GOOGSETNV persists them; GOOGCPRESET is the apply step. */
+static int read_frequency_lock_state(void){
+    struct frequency_lock_state state;
+    u8 bytes[4];
+    usize len = 0;
+    zero(&state, sizeof(state));
+
+    if(googgetnv("!LTEL3.Use Only Fixed Earfcn List", 0, bytes, 1, &len) < 0 || len < 1) goto fail;
+    int lte_enabled = bytes[0] != 0;
+    if(lte_enabled){
+        for(int index = 0; index < MAX_LTE_EARFCNS; index++){
+            len = 0;
+            if(googgetnv("!LTEL3.Fixed Earfcn List", index, bytes, 4, &len) < 0 || len < 4) goto fail;
+            u32 earfcn = read_le_u32(bytes);
+            if(earfcn != 0 && earfcn != 0xffffffffu && earfcn != 0xffffu){
+                state.lte_earfcns[state.lte_earfcn_count++] = earfcn;
+            }
+        }
+    }
+
+    len = 0;
+    if(googgetnv("!LTEL3.Fixed PCI", 0, bytes, 2, &len) < 0 || len < 2) goto fail;
+    u16 lte_pci = (u16)(bytes[0] | ((u16)bytes[1] << 8));
+    if(lte_pci != 0xffffu){
+        state.lte_pci_set = 1;
+        state.lte_pci = lte_pci;
+    }
+
+    len = 0;
+    if(googgetnv("!NRRRC.NR_FIXED_ARFCN", 0, bytes, 4, &len) < 0 || len < 4) goto fail;
+    state.nr_arfcn = read_le_u32(bytes);
+    state.nr_arfcn_set = state.nr_arfcn != 0;
+
+    len = 0;
+    if(googgetnv("!NRRRM.NR_FIXED_PCID", 0, bytes, 4, &len) < 0 || len < 4) goto fail;
+    state.nr_pci = read_le_u32(bytes);
+    state.nr_pci_set = state.nr_pci != 0xffffffffu;
+
+    state.valid = 1;
+    G.frequency_lock = state;
+    return 0;
+
+fail:
+    zero(&G.frequency_lock, sizeof(G.frequency_lock));
+    return -1;
+}
+
+static int write_frequency_lock_state(const u32 *lte_earfcns, u32 lte_count,
+                                      int lte_pci_set, u32 lte_pci,
+                                      int nr_arfcn_set, u32 nr_arfcn,
+                                      int nr_pci_set, u32 nr_pci){
+    if(lte_count > MAX_LTE_EARFCNS) return -1;
+    for(u32 i = 0; i < lte_count; i++){
+        if(lte_earfcns[i] == 0 || lte_earfcns[i] > 262143u) return -1;
+    }
+    if(lte_pci_set && lte_pci > 503u) return -1;
+    if(nr_arfcn_set && (nr_arfcn == 0 || nr_arfcn > 3279165u)) return -1;
+    if(nr_pci_set && nr_pci > 1007u) return -1;
+
+    char response[128];
+    if(at_exec("AT+GOOGCPRESET?", response, sizeof(response), AT_TIMEOUT_MS) < 0) return -1;
+
+    /* Gate the LTE list while replacing it. Every unused slot must be zero;
+     * 0xffff/0xffffffff makes Shannon's fixed-list parser reject the table. */
+    u8 disabled[1] = {0};
+    if(googsetnv("!LTEL3.Use Only Fixed Earfcn List", 0, disabled, 1) < 0) return -1;
+    for(int index = 0; index < MAX_LTE_EARFCNS; index++){
+        u8 encoded[4] = {0, 0, 0, 0};
+        if((u32)index < lte_count) write_le_u32(encoded, lte_earfcns[index]);
+        if(googsetnv("!LTEL3.Fixed Earfcn List", index, encoded, 4) < 0) return -1;
+    }
+
+    u8 lte_pci_bytes[2] = {0xff, 0xff};
+    if(lte_pci_set){
+        lte_pci_bytes[0] = (u8)(lte_pci & 0xff);
+        lte_pci_bytes[1] = (u8)((lte_pci >> 8) & 0xff);
+    }
+    if(googsetnv("!LTEL3.Fixed PCI", 0, lte_pci_bytes, 2) < 0) return -1;
+
+    u8 nr_arfcn_bytes[4] = {0, 0, 0, 0};
+    if(nr_arfcn_set) write_le_u32(nr_arfcn_bytes, nr_arfcn);
+    if(googsetnv("!NRRRC.NR_FIXED_ARFCN", 0, nr_arfcn_bytes, 4) < 0) return -1;
+
+    u8 nr_scs[1] = {0xff};
+    if(googsetnv("!NRRRC.NR_FIXED_SCS", 0, nr_scs, 1) < 0) return -1;
+
+    u8 nr_pci_bytes[4] = {0xff, 0xff, 0xff, 0xff};
+    if(nr_pci_set) write_le_u32(nr_pci_bytes, nr_pci);
+    if(googsetnv("!NRRRM.NR_FIXED_PCID", 0, nr_pci_bytes, 4) < 0) return -1;
+
+    u8 skip_scell_mr[1] = {0};
+    if(googsetnv("!NRRRM.NR_FIXED_ARFCN_PCID_SKIP_SCELL_MR", 0, skip_scell_mr, 1) < 0) return -1;
+
+    if(lte_count > 0){
+        u8 enabled[1] = {1};
+        if(googsetnv("!LTEL3.Use Only Fixed Earfcn List", 0, enabled, 1) < 0) return -1;
+    }
+
+    struct frequency_lock_state state;
+    zero(&state, sizeof(state));
+    state.valid = 1;
+    state.lte_earfcn_count = lte_count;
+    for(u32 i = 0; i < lte_count; i++) state.lte_earfcns[i] = lte_earfcns[i];
+    state.lte_pci_set = lte_pci_set;
+    state.lte_pci = (u16)lte_pci;
+    state.nr_arfcn_set = nr_arfcn_set;
+    state.nr_arfcn = nr_arfcn;
+    state.nr_pci_set = nr_pci_set;
+    state.nr_pci = nr_pci;
+    G.frequency_lock = state;
+
+    if(at_exec("AT+GOOGCPRESET", response, sizeof(response), 5000) < 0) return -1;
+    if(G.router_fd >= 0){
+        sys_close(G.router_fd);
+        G.router_fd = -1;
+    }
+    return 0;
 }
 
 typedef void (*nv_array_cb)(int idx, const u8 *bytes, usize len, void *ctx);
@@ -940,6 +1087,7 @@ static void refresh_all_state(void){
     (void)read_lte_state();
     (void)read_sa_state();
     (void)read_nsa_state();
+    (void)read_frequency_lock_state();
 }
 
 static void supp_nr_cb(int idx, const u8 *bytes, usize len, void *ctx){
@@ -1038,6 +1186,25 @@ static usize format_state_json(char *buf, usize off, usize cap, int req_id, cons
     /* NR Independent Capability */
     off = append_text(buf, off, cap, ",\"nr_independent_capability\":{\"checked\":true,\"independent_lock_supported\":true}");
 
+    /* LTE/NR frequency and PCI forcings. Empty/null means wildcard. */
+    off = append_text(buf, off, cap, ",\"frequency_lock\":{\"valid\":");
+    off = append_text(buf, off, cap, G.frequency_lock.valid ? "true" : "false");
+    off = append_text(buf, off, cap, ",\"lte_earfcns\":[");
+    for(u32 i = 0; i < G.frequency_lock.lte_earfcn_count; i++){
+        if(i) off = append_text(buf, off, cap, ",");
+        off = append_uint(buf, off, cap, G.frequency_lock.lte_earfcns[i]);
+    }
+    off = append_text(buf, off, cap, "],\"lte_pci\":");
+    if(G.frequency_lock.lte_pci_set) off = append_uint(buf, off, cap, G.frequency_lock.lte_pci);
+    else off = append_text(buf, off, cap, "null");
+    off = append_text(buf, off, cap, ",\"nr_arfcn\":");
+    if(G.frequency_lock.nr_arfcn_set) off = append_uint(buf, off, cap, G.frequency_lock.nr_arfcn);
+    else off = append_text(buf, off, cap, "null");
+    off = append_text(buf, off, cap, ",\"nr_pci\":");
+    if(G.frequency_lock.nr_pci_set) off = append_uint(buf, off, cap, G.frequency_lock.nr_pci);
+    else off = append_text(buf, off, cap, "null");
+    off = append_text(buf, off, cap, "}");
+
     off = append_text(buf, off, cap, "}}\n");
     return off;
 }
@@ -1084,6 +1251,61 @@ static int parse_json_named_bands(const char *json, const char *key, u8 *out_mas
 
 static int parse_json_bands(const char *json, u8 *out_mask, enum band_spec *out_spec){
     return parse_json_named_bands(json, "bands", out_mask, out_spec);
+}
+
+static const char *find_json_value(const char *json, const char *key){
+    usize key_len = slen(key);
+    const char *p = json;
+    while(*p){
+        if(*p == '"' && starts_ci(p + 1, key) && p[1 + key_len] == '"'){
+            p += key_len + 2;
+            while(*p && (*p == ' ' || *p == '\t' || *p == ':')) p++;
+            return p;
+        }
+        p++;
+    }
+    return NULL;
+}
+
+static int parse_json_optional_u32(const char *json, const char *key, u32 *value, int *is_set){
+    const char *p = find_json_value(json, key);
+    if(!p) return -1;
+    if(starts_ci(p, "null")){
+        *value = 0;
+        *is_set = 0;
+        return 0;
+    }
+    if(*p < '0' || *p > '9') return -1;
+    u64 parsed = 0;
+    while(*p >= '0' && *p <= '9'){
+        parsed = parsed * 10u + (u64)(*p++ - '0');
+        if(parsed > 0xffffffffu) return -1;
+    }
+    *value = (u32)parsed;
+    *is_set = 1;
+    return 0;
+}
+
+static int parse_json_u32_array(const char *json, const char *key,
+                                u32 *values, u32 capacity, u32 *count){
+    const char *p = find_json_value(json, key);
+    if(!p || *p != '[') return -1;
+    p++;
+    *count = 0;
+    while(*p){
+        while(*p == ' ' || *p == '\t' || *p == ',') p++;
+        if(*p == ']') return 0;
+        if(*p < '0' || *p > '9' || *count >= capacity) return -1;
+        u64 parsed = 0;
+        while(*p >= '0' && *p <= '9'){
+            parsed = parsed * 10u + (u64)(*p++ - '0');
+            if(parsed > 0xffffffffu) return -1;
+        }
+        values[(*count)++] = (u32)parsed;
+        while(*p == ' ' || *p == '\t') p++;
+        if(*p != ',' && *p != ']') return -1;
+    }
+    return -1;
 }
 
 /* Parse command name and ID */
@@ -1133,7 +1355,29 @@ static int handle_client_request(int client_fd, const char *req_line){
     u8 mask[MASK_BYTES];
     enum band_spec spec;
 
-    if(contains_ci(cmd, "query") || contains_ci(cmd, "refresh") || contains_ci(cmd, "sim_set")){
+    if(contains_ci(cmd, "frequency_lock_set")){
+        u32 lte_earfcns[MAX_LTE_EARFCNS];
+        u32 lte_count = 0;
+        u32 lte_pci = 0, nr_arfcn = 0, nr_pci = 0;
+        int lte_pci_set = 0, nr_arfcn_set = 0, nr_pci_set = 0;
+        ok = parse_json_u32_array(req_line, "lte_earfcns", lte_earfcns,
+                                  MAX_LTE_EARFCNS, &lte_count) == 0 &&
+             parse_json_optional_u32(req_line, "lte_pci", &lte_pci, &lte_pci_set) == 0 &&
+             parse_json_optional_u32(req_line, "nr_arfcn", &nr_arfcn, &nr_arfcn_set) == 0 &&
+             parse_json_optional_u32(req_line, "nr_pci", &nr_pci, &nr_pci_set) == 0;
+        if(ok){
+            ok = write_frequency_lock_state(lte_earfcns, lte_count,
+                                            lte_pci_set, lte_pci,
+                                            nr_arfcn_set, nr_arfcn,
+                                            nr_pci_set, nr_pci) == 0;
+        }
+    } else if(contains_ci(cmd, "frequency_lock_reset")){
+        u32 empty_lte[MAX_LTE_EARFCNS];
+        zero(empty_lte, sizeof(empty_lte));
+        ok = write_frequency_lock_state(empty_lte, 0, 0, 0, 0, 0, 0, 0) == 0;
+    } else if(contains_ci(cmd, "frequency_lock_refresh")){
+        ok = read_frequency_lock_state() == 0;
+    } else if(contains_ci(cmd, "query") || contains_ci(cmd, "refresh") || contains_ci(cmd, "sim_set")){
         refresh_all_state();
     } else if(contains_ci(cmd, "batch_set")){
         u8 gsm_m[MASK_BYTES], wcdma_m[MASK_BYTES], lte_m[MASK_BYTES], sa_m[MASK_BYTES], nsa_m[MASK_BYTES];
@@ -1257,7 +1501,8 @@ void _start(void){
     G.router_fd = -1;
 
     /* Parse argv for -uid */
-    register long *sp __asm__("sp");
+    long *sp;
+    __asm__ volatile("mov %0, sp" : "=r"(sp));
     long argc = *sp;
     char **argv = (char**)(sp + 1);
 

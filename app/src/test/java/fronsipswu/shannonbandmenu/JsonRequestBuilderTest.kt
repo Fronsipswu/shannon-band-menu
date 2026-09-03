@@ -79,6 +79,23 @@ class JsonRequestBuilderTest {
     }
 
     @Test
+    fun frequencyLockSet_preservesListAndNullWildcards() {
+        val json = JsonRequestBuilder.frequencyLockSet(
+            lteEarfcns = listOf(9310, 38852),
+            ltePci = null,
+            nrArfcn = 529950,
+            nrPci = null
+        )
+
+        assertEquals("frequency_lock_set", json.getString("cmd"))
+        assertEquals(9310, json.getJSONArray("lte_earfcns").getInt(0))
+        assertEquals(38852, json.getJSONArray("lte_earfcns").getInt(1))
+        assertTrue(json.isNull("lte_pci"))
+        assertEquals(529950, json.getInt("nr_arfcn"))
+        assertTrue(json.isNull("nr_pci"))
+    }
+
+    @Test
     fun verboseSet_true() {
         val json = JsonRequestBuilder.verboseSet(true)
         assertEquals("verbose_set", json.getString("cmd"))

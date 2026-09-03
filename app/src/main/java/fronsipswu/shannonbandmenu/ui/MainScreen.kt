@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import fronsipswu.shannonbandmenu.ModemState
+import fronsipswu.shannonbandmenu.FrequencyLockState
 import fronsipswu.shannonbandmenu.NrMode
 import fronsipswu.shannonbandmenu.R
 import fronsipswu.shannonbandmenu.SimState
@@ -60,6 +61,12 @@ fun MainScreen(
     onSnackbarShown: () -> Unit,
     debugEnabled: Boolean,
     onDebugToggle: () -> Unit,
+    frequencyLockState: FrequencyLockState,
+    frequencyLockRefreshing: Boolean,
+    frequencyLockRefreshKey: Int,
+    onFrequencyLockRefresh: () -> Unit,
+    onFrequencyLockApply: (List<Int>, Int?, Int?, Int?) -> Unit,
+    onFrequencyLockReset: () -> Unit,
     onCellLockSimSwitch: (Int) -> Unit,
     onCellLockApply: (Int, Int, String) -> Unit,
     onCellLockClearAll: (Int) -> Unit,
@@ -80,7 +87,7 @@ fun MainScreen(
     onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
     var selectedIndex by remember { mutableIntStateOf(0) }
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(pageCount = { 3 })
 
     LaunchedEffect(selectedIndex) {
         if (pagerState.targetPage != selectedIndex) pagerState.animateScrollToPage(selectedIndex)
@@ -114,6 +121,17 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedIndex == 1,
                     onClick = { selectedIndex = 1 },
+                    icon = {
+                        Icon(
+                            painterResource(R.drawable.ic_cell_lock),
+                            contentDescription = "Cell Lock"
+                        )
+                    },
+                    label = { Text("Cell Lock") }
+                )
+                NavigationBarItem(
+                    selected = selectedIndex == 2,
+                    onClick = { selectedIndex = 2 },
                     icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
                     label = { Text("Info") }
                 )
@@ -165,6 +183,16 @@ fun MainScreen(
                         visibleNrNsaBands = visibleNrNsaBands,
                         contentPadding = contentPadding,
                         onBandVisibilitySave = onBandVisibilitySave
+                    )
+                } else if (page == 1) {
+                    FrequencyLockScreen(
+                        state = frequencyLockState,
+                        isRefreshing = frequencyLockRefreshing,
+                        refreshKey = frequencyLockRefreshKey,
+                        onRefresh = onFrequencyLockRefresh,
+                        onApply = onFrequencyLockApply,
+                        onReset = onFrequencyLockReset,
+                        contentPadding = contentPadding
                     )
                 } else {
                     InfoScreen(

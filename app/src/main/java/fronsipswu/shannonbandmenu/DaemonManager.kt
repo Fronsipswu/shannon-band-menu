@@ -21,7 +21,7 @@ class DaemonManager(private val context: Context) {
         private const val TAG = "ShannonBand"
         private const val BINARY_NAME = "shannon-bandlockd"
         private const val SOCKET_NAME = "shannon_bandlockd"
-        private const val EXPECTED_DAEMON_VERSION = "4.6.0"
+        private const val EXPECTED_DAEMON_VERSION = "4.7.0"
     }
 
     var isReady = mutableStateOf(false)
@@ -262,7 +262,7 @@ class DaemonManager(private val context: Context) {
         // The first write may have completed even when its response was lost.
         val retryOnIo = command == "query" || command == "refresh" ||
             command == "sim_set" || command == "query_lte_cell_lock" ||
-            command == "query_nr_cell_lock"
+            command == "query_nr_cell_lock" || command == "frequency_lock_refresh"
 
         for (attempt in 1..2) {
             if (writer == null || reader == null) {
@@ -412,6 +412,21 @@ class DaemonManager(private val context: Context) {
     }
     fun reset(): JSONObject = sendRequest(JsonRequestBuilder.reset())
     fun verboseSet(verbose: Boolean): JSONObject = sendRequest(JsonRequestBuilder.verboseSet(verbose))
+
+    fun frequencyLockSet(
+        lteEarfcns: List<Int>,
+        ltePci: Int?,
+        nrArfcn: Int?,
+        nrPci: Int?
+    ): JSONObject = sendRequest(
+        JsonRequestBuilder.frequencyLockSet(lteEarfcns, ltePci, nrArfcn, nrPci)
+    )
+
+    fun frequencyLockRefresh(): JSONObject =
+        sendRequest(JsonRequestBuilder.frequencyLockRefresh())
+
+    fun frequencyLockReset(): JSONObject =
+        sendRequest(JsonRequestBuilder.frequencyLockReset())
 
     fun lteCellLockSet(earfcn: Int, pci: Int): JSONObject =
         sendRequest(JsonRequestBuilder.lteCellLockSet(earfcn, pci))

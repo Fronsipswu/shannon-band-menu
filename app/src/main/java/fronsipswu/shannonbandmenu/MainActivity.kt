@@ -106,6 +106,8 @@ class MainActivity : ComponentActivity() {
                 var cellLockRefreshKey by remember { mutableIntStateOf(0) }
                 var cellLockSelectedSim by remember { mutableIntStateOf(0) }
                 var nrIndependentSupported by remember { mutableStateOf<Boolean?>(null) }
+                var frequencyLockRefreshing by remember { mutableStateOf(false) }
+                var frequencyLockRefreshKey by remember { mutableIntStateOf(0) }
 
                 LaunchedEffect(Unit) {
                     BandPreferences.getDebugLogging(bandDataStore).collectLatest { enabled ->
@@ -191,6 +193,7 @@ class MainActivity : ComponentActivity() {
                                     val hardware = sim1Parsed.hardware ?: HardwareBands()
                                     val sim1CellLock = sim1Parsed.cellLockState ?: CellLockState()
                                     val sim1PlmnLock = sim1Parsed.plmnLockState ?: PlmnLockState()
+                                    val frequencyLock = sim1Parsed.frequencyLockState ?: FrequencyLockState()
 
                                     // Read NR independent capability from daemon response
                                     val nrCap = sim1Parsed.nrIndependentCapability
@@ -230,7 +233,8 @@ class MainActivity : ComponentActivity() {
                                         sim1State, sim2State, hardware, true,
                                         sim1CellLock, sim2CellLock,
                                         sim1PlmnLock, sim2PlmnLock,
-                                        initNrIndependentSupported ?: nrIndependentSupported
+                                        initNrIndependentSupported ?: nrIndependentSupported,
+                                        frequencyLock
                                     )
 
                                     // I6: Enable verbose logging on startup if debug is enabled
@@ -602,6 +606,113 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     cellLockRefreshKey = cellLockRefreshKey,
+                    frequencyLockState = modemState?.frequencyLock ?: FrequencyLockState(),
+                    frequencyLockRefreshing = frequencyLockRefreshing,
+                    frequencyLockRefreshKey = frequencyLockRefreshKey,
+                    onFrequencyLockRefresh = {
+                        scope.launch {
+                            frequencyLockRefreshing = true
+                            try {
+                                modemLock.withLock {
+                                    var refreshed: FrequencyLockState? = null
+                                    var errorMsg: String? = null
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val response = JsonStateParser.parseResponse(
+                                                daemonManager.frequencyLockRefresh()
+                                            )
+                                            if (response.ok) refreshed = response.frequencyLockState
+                                            else errorMsg = response.error?.message ?: "Frequency-lock refresh failed"
+                                        } catch (e: Exception) {
+                                            errorMsg = "Frequency-lock refresh failed: ${e.message}"
+                                            AppLog.e(TAG, "Frequency lock refresh failed", e)
+                                        }
+                                    }
+                                    if (refreshed != null) {
+                                        modemState = modemState?.copy(frequencyLock = refreshed!!)
+                                            ?: ModemState(frequencyLock = refreshed!!)
+                                        frequencyLockRefreshKey++
+                                    }
+                                    if (errorMsg != null) {
+                                        snackbarIsError = true
+                                        snackbarMessage = errorMsg
+                                    }
+                                }
+                            } finally {
+                                frequencyLockRefreshing = false
+                            }
+                        }
+                    },
+                    onFrequencyLockApply = { lteEarfcns, ltePci, nrArfcn, nrPci ->
+                        scope.launch {
+                            frequencyLockRefreshing = true
+                            try {
+                                modemLock.withLock {
+                                    var applied: FrequencyLockState? = null
+                                    var errorMsg: String? = null
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val response = JsonStateParser.parseResponse(
+                                                daemonManager.frequencyLockSet(
+                                                    lteEarfcns, ltePci, nrArfcn, nrPci
+                                                )
+                                            )
+                                            if (response.ok) applied = response.frequencyLockState
+                                            else errorMsg = response.error?.message
+                                                ?: "The modem rejected the cell-lock configuration"
+                                        } catch (e: Exception) {
+                                            errorMsg = "Cell-lock apply failed: ${e.message}"
+                                            AppLog.e(TAG, "Frequency lock apply failed", e)
+                                        }
+                                    }
+                                    if (applied != null) {
+                                        modemState = modemState?.copy(frequencyLock = applied!!)
+                                            ?: ModemState(frequencyLock = applied!!)
+                                        frequencyLockRefreshKey++
+                                    }
+                                    snackbarIsError = errorMsg != null
+                                    snackbarMessage = errorMsg
+                                        ?: "Cell locks saved; cellular modem is restarting"
+                                }
+                            } finally {
+                                frequencyLockRefreshing = false
+                            }
+                        }
+                    },
+                    onFrequencyLockReset = {
+                        scope.launch {
+                            frequencyLockRefreshing = true
+                            try {
+                                modemLock.withLock {
+                                    var resetState: FrequencyLockState? = null
+                                    var errorMsg: String? = null
+                                    withContext(Dispatchers.IO) {
+                                        try {
+                                            val response = JsonStateParser.parseResponse(
+                                                daemonManager.frequencyLockReset()
+                                            )
+                                            if (response.ok) resetState = response.frequencyLockState
+                                            else errorMsg = response.error?.message
+                                                ?: "The modem rejected the cell-lock reset"
+                                        } catch (e: Exception) {
+                                            errorMsg = "Cell-lock reset failed: ${e.message}"
+                                            AppLog.e(TAG, "Frequency lock reset failed", e)
+                                        }
+                                    }
+                                    if (resetState != null) {
+                                        modemState = modemState?.copy(frequencyLock = resetState!!)
+                                            ?: ModemState(frequencyLock = resetState!!)
+                                        frequencyLockRefreshKey++
+                                    }
+                                    snackbarIsError = errorMsg != null
+                                    snackbarMessage = errorMsg
+                                        ?: "Cell locks cleared; cellular modem is restarting"
+                                }
+                            } finally {
+                                frequencyLockRefreshing = false
+                            }
+                        }
+                    },
                     nrIndependentSupported = nrIndependentSupported,
                     onApply = { slot, state, profile ->
                         scope.launch {
