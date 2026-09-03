@@ -272,6 +272,27 @@ fun nrSaCarrierAggregationLabel(
     return if (widths.isEmpty()) "${carriers}CA" else "${carriers}CA ($widths MHz)"
 }
 
+fun resolveNrBandwidths(
+    cells: List<NetworkCell>,
+    bandwidthsKhz: List<Int>
+): List<NetworkCell> {
+    if (bandwidthsKhz.isEmpty()) return cells
+    var secondaryIndex = 0
+    return cells.map { cell ->
+        if (cell.technology == "NR" && cell.bandwidthKhz == null) {
+            val bw = if (cell.role == NetworkCellRole.PRIMARY) {
+                bandwidthsKhz.firstOrNull()
+            } else {
+                secondaryIndex++
+                bandwidthsKhz.getOrNull(secondaryIndex)
+            }
+            if (bw != null) cell.copy(bandwidthKhz = bw) else cell
+        } else {
+            cell
+        }
+    }
+}
+
 fun isNrNsa(cells: List<NetworkCell>): Boolean =
     cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "LTE" } &&
         cells.any { it.role == NetworkCellRole.SECONDARY && it.technology == "NR" }
@@ -345,6 +366,27 @@ class NetworkInfoSource(private val context: Context) {
                     emptyList()
                 }
                 val service = runCatching { manager.serviceState }.getOrNull()
+                val voiceNetwork = networkTypeName(manager.voiceNetworkType).let { voice ->
+                    if (voice == "NR") "NR-SA" else voice
+                }
+                val dataNetwork = networkTypeName(manager.dataNetworkType).let { data ->
+                    when {
+                        data == "LTE" && isNrNsa(cells) -> "NR-NSA"
+                        data == "NR" -> "NR-SA"
+                        else -> data
+                    }
+                }
+                val bandwidthsKhz = service?.cellBandwidths
+                    ?.filter { it > 0 && it != CellInfo.UNAVAILABLE }
+                    .orEmpty()
+                val isNrSa = when {
+                    dataNetwork == "LTE" && isNrNsa(cells) -> false
+                    dataNetwork == "NR-SA" -> true
+                    voiceNetwork == "NR-SA" && dataNetwork != "LTE" -> true
+                    cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "NR" } -> true
+                    else -> false
+                }
+                val resolvedCells = if (isNrSa) resolveNrBandwidths(cells, bandwidthsKhz) else cells
                 NetworkSubscription(
                     subscriptionId = subscription.subscriptionId,
                     simSlot = subscription.simSlotIndex,
@@ -357,21 +399,11 @@ class NetworkInfoSource(private val context: Context) {
                         ?: splitOperator(manager.networkOperator).second,
                     countryIso = manager.networkCountryIso,
                     roaming = manager.isNetworkRoaming,
-                    voiceNetwork = networkTypeName(manager.voiceNetworkType).let { voiceNetwork ->
-                        if (voiceNetwork == "NR") "NR-SA" else voiceNetwork
-                    },
-                    dataNetwork = networkTypeName(manager.dataNetworkType).let { dataNetwork ->
-                        when {
-                            dataNetwork == "LTE" && isNrNsa(cells) -> "NR-NSA"
-                            dataNetwork == "NR" -> "NR-SA"
-                            else -> dataNetwork
-                        }
-                    },
+                    voiceNetwork = voiceNetwork,
+                    dataNetwork = dataNetwork,
                     dataState = dataStateName(manager.dataState),
-                    bandwidthsKhz = service?.cellBandwidths
-                        ?.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-                        .orEmpty(),
-                    cells = cells
+                    bandwidthsKhz = bandwidthsKhz,
+                    cells = resolvedCells
                 )
             }
             NetworkInfoSnapshot(

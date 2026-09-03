@@ -139,4 +139,17 @@ class NetworkInfoTest {
 
         assertEquals(13, cell.sinr)
     }
+
+    @Test
+    fun resolveNrBandwidths_assignsFirstBandwidthToPrimaryCell() {
+        val cells = listOf(
+            NetworkCell("NR", NetworkCellRole.PRIMARY, 0, true, band = 41),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+        val bandwidths = listOf(90_000, 20_000)
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+
+        assertEquals(90_000, resolved[0].bandwidthKhz)
+        assertEquals(20_000, resolved[1].bandwidthKhz)
+    }
 }

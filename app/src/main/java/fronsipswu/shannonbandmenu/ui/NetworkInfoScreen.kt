@@ -552,6 +552,7 @@ private fun MutableList<Pair<String, String>>.addNrRows(cell: NetworkCell) {
         nrFrequencyForArfcn(arfcn)?.let { add("Frequency" to "${formatDecimal(it)} MHz") }
     }
     cell.band?.let { add("Band" to "n$it") }
+    cell.bandwidthKhz?.let { add("Bandwidth" to formatBandwidth(it)) }
     cell.rsrp?.let { add("SS-RSRP" to "$it dBm") }
     cell.rsrq?.let { add("SS-RSRQ" to "$it dB") }
     cell.sinr?.let { add("SS-SINR" to "$it dB") }
