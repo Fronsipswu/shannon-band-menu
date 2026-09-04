@@ -24,6 +24,23 @@ On Windows PowerShell, use `./gradlew.bat clean assembleDebug` instead. The debu
 
 For a release build, run `./gradlew clean assembleRelease`. The output in `app/build/outputs/apk/release/` must be signed with your release key before distribution.
 
+For the local Windows checkout with the Android SDK at `D:\AndroidSDK`, tests and the
+R8 release build can be run with:
+
+```powershell
+$env:ANDROID_HOME = 'D:\AndroidSDK'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+Set-Location .\app
+.\gradlew.bat test assembleRelease
+
+$apk = Get-Item .\build\outputs\apk\release\ShannonBandMenu-release.apk
+if ($apk.Length -ge 3MB) { throw "Release APK is $($apk.Length) bytes; expected under 3 MiB." }
+```
+
+The release variant currently uses the machine's debug signing key. An APK built on a
+different machine therefore cannot update an existing installation unless both builds
+use the same signing key.
+
 ### Standalone command-line build
 
 The rooted Android/Termux command-line version uses stable release filenames:

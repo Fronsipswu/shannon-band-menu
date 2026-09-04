@@ -175,6 +175,67 @@ class NetworkInfoTest {
     }
 
     @Test
+    fun nsaBandwidths_ignoresRatchetedLteDuplicateBeforeLowBandNr() {
+        // Live 3-1-1_n28 capture. Current LTE CellInfo is 15+15+10 MHz and the
+        // current physical channels are LTE 15 + NR 20 MHz, but ServiceState
+        // retains a stale third 15 MHz bandwidth from an earlier configuration.
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 10_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false, band = 28)
+        )
+        val bandwidths = listOf(15_000, 15_000, 15_000, 20_000)
+
+        assertEquals(listOf(20_000), splitNsaBandwidths(cells, bandwidths).second)
+        assertEquals("20 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(20_000, resolved[3].bandwidthKhz)
+    }
+
+    @Test
+    fun nsaBandwidths_preservesNrWidthSharedWithLteWhenItIsOnlyCandidate() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(15_000),
+            splitNsaBandwidths(cells, listOf(15_000, 15_000)).second
+        )
+    }
+
+    @Test
+    fun nsaBandwidths_preservesLowNrSharedWithLteAlongsideWideNr() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(90_000, 15_000),
+            splitNsaBandwidths(cells, listOf(15_000, 90_000, 15_000)).second
+        )
+    }
+
+    @Test
+    fun nsaBandwidths_preservesMultipleDistinctLowNrCandidatesInIncompleteArray() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(10_000, 20_000),
+            splitNsaBandwidths(cells, listOf(15_000, 10_000, 20_000)).second
+        )
+    }
+
+    @Test
     fun nsaBandwidths_matchesObservedThreeLteAndTwoNrCarriers() {
         // Live 3-1-1_n28-n41 capture: CellInfo exposes all three LTE widths but
         // ServiceState contains only the LTE PCell followed by both NR widths.

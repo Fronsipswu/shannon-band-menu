@@ -269,8 +269,31 @@ fun splitNsaBandwidths(
     }
 
     val allLteWidthsKnown = lteCells.isNotEmpty() && knownLteWidths.size == lteCells.size
+    val nrServingCount = cells.count {
+        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
+            it.technology == "NR"
+    }
     val nrWidths = if (allLteWidthsKnown) {
-        unmatched
+        val oneWidthPerReportedCell = nrServingCount > 0 &&
+            valid.size == lteCells.size + nrServingCount
+        val onlyLowBandwidthCandidates = unmatched.all { it <= 20_000 }
+        val candidatesDistinctFromLte = unmatched.filterNot { it in knownLteWidths }
+
+        if (oneWidthPerReportedCell &&
+            onlyLowBandwidthCandidates &&
+            unmatched.size > nrServingCount &&
+            candidatesDistinctFromLte.size >= nrServingCount
+        ) {
+            // ServiceState bandwidths are ratcheted and can retain a larger, stale
+            // configuration while CellInfo already describes the current LTE cells.
+            // When a complete-looking array leaves too many low-band NR candidates,
+            // prefer candidates that are not also current LTE widths. Do not apply
+            // this to wide NR or incomplete arrays: one NR CellInfo can represent
+            // multiple NR physical carriers in those cases.
+            candidatesDistinctFromLte
+        } else {
+            unmatched
+        }
     } else {
         // LTE cannot exceed 20 MHz per carrier. With incomplete LTE evidence,
         // smaller unmatched values are ambiguous and must not be invented as NR.

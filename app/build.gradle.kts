@@ -11,7 +11,7 @@ android {
         applicationId = "fronsipswu.shannonbandmenu"
         minSdk = 30
         targetSdk = 37
-        versionCode = 92
+        versionCode = 94
         versionName = "7.0.0"
         ndk {
             abiFilters += listOf("arm64-v8a")
