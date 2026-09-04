@@ -242,32 +242,73 @@ fun totalBandwidthLabel(
     return "$totalMhzStr ($components)"
 }
 
+fun splitNsaBandwidths(
+    cells: List<NetworkCell>,
+    bandwidthsKhz: List<Int>
+): Pair<List<Int>, List<Int>> {
+    val valid = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
+    if (valid.isEmpty()) return emptyList<Int>() to emptyList<Int>()
+
+    // In 3GPP, LTE maximum channel bandwidth is 20 MHz (20,000 kHz).
+    // Any carrier bandwidth > 20,000 kHz (e.g. 40, 50, 80, 90, 100 MHz) is strictly 5G NR.
+    val hasLargeNrBandwidth = valid.any { it > 20_000 }
+    if (hasLargeNrBandwidth) {
+        val lte = valid.filter { it <= 20_000 }
+        val nr = valid.filter { it > 20_000 }
+        return lte to nr
+    }
+
+    // When all reported bandwidths are <= 20 MHz (e.g. low-band NR n28 + LTE):
+    // In NSA (EN-DC), LTE anchor carriers precede the NR carrier(s).
+    val nrCount = cells.count {
+        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
+            it.technology == "NR"
+    }.coerceAtLeast(1)
+
+    return if (valid.size > nrCount) {
+        valid.dropLast(nrCount) to valid.takeLast(nrCount)
+    } else if (valid.size > 1) {
+        valid.dropLast(1) to valid.takeLast(1)
+    } else {
+        valid to emptyList()
+    }
+}
+
 fun lteBandwidthsForNsa(
     cells: List<NetworkCell>,
     bandwidthsKhz: List<Int>
 ): List<Int> {
-    val lteServingCount = cells.count {
-        it.technology == "LTE" &&
-            (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY)
-    }
     val valid = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    return if (lteServingCount > 0) valid.take(lteServingCount) else valid
+    return splitNsaBandwidths(cells, valid).first
 }
 
 fun lteBandwidthLabel(
     cells: List<NetworkCell>,
     bandwidthsKhz: List<Int>
 ): String? {
-    val lteCells = cells.filter { it.technology == "LTE" }
-    val lteBandwidths = lteBandwidthsForNsa(cells, bandwidthsKhz)
+    val lteCells = cells.filter {
+        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
+            it.technology == "LTE"
+    }
+    val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
+    val isNsa = isNrNsa(cells) ||
+        (cells.any { it.technology == "LTE" } &&
+            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+
+    val lteFallback = if (isNsa) {
+        splitNsaBandwidths(cells, fallback).first
+    } else {
+        fallback
+    }
+
     val widths = if (lteCells.isNotEmpty()) {
         val mapped = lteCells.mapIndexedNotNull { index, cell ->
             cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
-                ?: lteBandwidths.getOrNull(index)
+                ?: lteFallback.getOrNull(index)
         }
-        mapped.ifEmpty { lteBandwidths }
+        mapped.ifEmpty { lteFallback }
     } else {
-        lteBandwidths
+        lteFallback
     }
     if (widths.isEmpty()) return null
     val components = widths.joinToString("+") { khz ->
@@ -306,11 +347,17 @@ fun resolveNrBandwidths(
 ): List<NetworkCell> {
     if (bandwidthsKhz.isEmpty()) return cells
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val lteServingCount = cells.count {
-        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
-            it.technology == "LTE"
+    val isNsa = isNrNsa(cells) ||
+        (cells.any { it.technology == "LTE" } &&
+            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+
+    val nrBandwidths = if (isNsa) {
+        splitNsaBandwidths(cells, fallback).second
+    } else {
+        fallback
     }
-    val nrBandwidths = fallback.drop(lteServingCount)
+    if (nrBandwidths.isEmpty()) return cells
+
     val hasPrimaryNr = cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "NR" }
     var secondaryIndex = if (hasPrimaryNr) 1 else 0
 
@@ -344,19 +391,27 @@ fun bandwidthLabelForTechnology(
             it.technology == technology
     }
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val lteServingCount = cells.count {
-        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
-            it.technology == "LTE"
-    }
-    val fallbackForTechnology = if (technology == "NR") {
-        fallback.drop(lteServingCount)
+    val isNsa = isNrNsa(cells) ||
+        (cells.any { it.technology == "LTE" } &&
+            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+
+    val fallbackForTechnology = if (isNsa) {
+        val (lteBw, nrBw) = splitNsaBandwidths(cells, fallback)
+        if (technology == "NR") nrBw else lteBw
     } else {
         fallback
     }
-    val widths = servingCells.mapIndexedNotNull { index, cell ->
-        cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
-            ?: fallbackForTechnology.getOrNull(index)
+
+    val widths = if (servingCells.isNotEmpty()) {
+        val mapped = servingCells.mapIndexedNotNull { index, cell ->
+            cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
+                ?: fallbackForTechnology.getOrNull(index)
+        }
+        mapped.ifEmpty { fallbackForTechnology }
+    } else {
+        fallbackForTechnology
     }
+
     val carriers = max(servingCells.size, widths.size)
     val formattedWidths = widths.joinToString("+") { bandwidth ->
         val mhz = bandwidth / 1000.0

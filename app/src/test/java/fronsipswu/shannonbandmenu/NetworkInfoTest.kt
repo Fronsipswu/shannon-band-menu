@@ -113,6 +113,68 @@ class NetworkInfoTest {
     }
 
     @Test
+    fun nsaBandwidths_multipleLteServingCellsWithOnlyPrimaryAndNrReportedInBandwidths() {
+        // Real-world scenario on user's device: 2 LTE cells (PCell B3 + SCell B1) and 1 NR SCell,
+        // but ServiceState.cellBandwidths only reports [15000, 90000].
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 10_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+        val bandwidths = listOf(15_000, 90_000)
+        val lteCells = cells.filter { it.technology == "LTE" }
+        val lteBandwidths = lteBandwidthsForNsa(cells, bandwidths)
+
+        assertEquals(listOf(15_000), lteBandwidths)
+        assertEquals("2CA (B3+B1)", carrierAggregationLabel(lteCells, lteBandwidths))
+        assertEquals("15+10 MHz", lteBandwidthLabel(cells, bandwidths))
+        assertEquals("90 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+        assertEquals(true, isNrNsa(cells))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(90_000, resolved[2].bandwidthKhz)
+    }
+
+    @Test
+    fun nsaBandwidths_whenNrBandwidthIs20MHzOrLess() {
+        // Low-band NR scenario: LTE B3 (15 MHz) + NR n28 (20 MHz) -> [15000, 20000]
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false, band = 28)
+        )
+        val bandwidths = listOf(15_000, 20_000)
+        val lteCells = cells.filter { it.technology == "LTE" }
+        val lteBandwidths = lteBandwidthsForNsa(cells, bandwidths)
+
+        assertEquals(listOf(15_000), lteBandwidths)
+        assertEquals("15 MHz", lteBandwidthLabel(cells, bandwidths))
+        assertEquals("20 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(20_000, resolved[1].bandwidthKhz)
+    }
+
+    @Test
+    fun nsaBandwidths_multipleLteCellsWhenNrIs20MHz() {
+        // LTE B3 (15 MHz) + LTE B1 (10 MHz) + NR n28 (20 MHz), with [15000, 20000] in bandwidths
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 10_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false, band = 28)
+        )
+        val bandwidths = listOf(15_000, 20_000)
+        val lteCells = cells.filter { it.technology == "LTE" }
+        val lteBandwidths = lteBandwidthsForNsa(cells, bandwidths)
+
+        assertEquals(listOf(15_000), lteBandwidths)
+        assertEquals("15+10 MHz", lteBandwidthLabel(cells, bandwidths))
+        assertEquals("20 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(20_000, resolved[2].bandwidthKhz)
+    }
+
+    @Test
     fun nrSaCarrierAggregation_usesBandwidthsFormat() {
         val cells = listOf(
             NetworkCell("NR", NetworkCellRole.PRIMARY, 0, true, band = 41),
