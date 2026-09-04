@@ -248,30 +248,41 @@ fun splitNsaBandwidths(
 ): Pair<List<Int>, List<Int>> {
     val valid = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
     if (valid.isEmpty()) return emptyList<Int>() to emptyList<Int>()
+    if (!isNrNsa(cells)) return valid to emptyList()
 
-    // In 3GPP, LTE maximum channel bandwidth is 20 MHz (20,000 kHz).
-    // Any carrier bandwidth > 20,000 kHz (e.g. 40, 50, 80, 90, 100 MHz) is strictly 5G NR.
-    val hasLargeNrBandwidth = valid.any { it > 20_000 }
-    if (hasLargeNrBandwidth) {
-        val lte = valid.filter { it <= 20_000 }
-        val nr = valid.filter { it > 20_000 }
-        return lte to nr
-    }
-
-    // When all reported bandwidths are <= 20 MHz (e.g. low-band NR n28 + LTE):
-    // In NSA (EN-DC), LTE anchor carriers precede the NR carrier(s).
-    val nrCount = cells.count {
+    val lteCells = cells.filter {
         (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
-            it.technology == "NR"
-    }.coerceAtLeast(1)
-
-    return if (valid.size > nrCount) {
-        valid.dropLast(nrCount) to valid.takeLast(nrCount)
-    } else if (valid.size > 1) {
-        valid.dropLast(1) to valid.takeLast(1)
-    } else {
-        valid to emptyList()
+            it.technology == "LTE"
     }
+    val knownLteWidths = lteCells.mapNotNull { cell ->
+        cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
+    }
+    val unmatched = valid.toMutableList()
+
+    // ServiceState exposes bandwidth values without RAT or cell identifiers. Match
+    // exact LTE widths as a multiset instead of assuming one entry per CellInfo or
+    // relying on array order. Samsung may omit LTE SCells from this array while
+    // still reporting them through CellInfo.
+    knownLteWidths.forEach { width ->
+        val index = unmatched.indexOf(width)
+        if (index >= 0) unmatched.removeAt(index)
+    }
+
+    val allLteWidthsKnown = lteCells.isNotEmpty() && knownLteWidths.size == lteCells.size
+    val nrWidths = if (allLteWidthsKnown) {
+        unmatched
+    } else {
+        // LTE cannot exceed 20 MHz per carrier. With incomplete LTE evidence,
+        // smaller unmatched values are ambiguous and must not be invented as NR.
+        unmatched.filter { it > 20_000 }
+    }
+    val lteWidths = valid.toMutableList().apply {
+        nrWidths.forEach { width ->
+            val index = indexOf(width)
+            if (index >= 0) removeAt(index)
+        }
+    }
+    return lteWidths to nrWidths
 }
 
 fun lteBandwidthsForNsa(
@@ -291,9 +302,7 @@ fun lteBandwidthLabel(
             it.technology == "LTE"
     }
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val isNsa = isNrNsa(cells) ||
-        (cells.any { it.technology == "LTE" } &&
-            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+    val isNsa = isNrNsa(cells)
 
     val lteFallback = if (isNsa) {
         splitNsaBandwidths(cells, fallback).first
@@ -347,9 +356,7 @@ fun resolveNrBandwidths(
 ): List<NetworkCell> {
     if (bandwidthsKhz.isEmpty()) return cells
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val isNsa = isNrNsa(cells) ||
-        (cells.any { it.technology == "LTE" } &&
-            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+    val isNsa = isNrNsa(cells)
 
     val nrBandwidths = if (isNsa) {
         splitNsaBandwidths(cells, fallback).second
@@ -390,10 +397,9 @@ fun bandwidthLabelForTechnology(
         (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
             it.technology == technology
     }
+    if (technology == "NR" && servingCells.isEmpty()) return "Unknown"
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val isNsa = isNrNsa(cells) ||
-        (cells.any { it.technology == "LTE" } &&
-            (cells.any { it.technology == "NR" } || fallback.any { it > 20_000 }))
+    val isNsa = isNrNsa(cells)
 
     val fallbackForTechnology = if (isNsa) {
         val (lteBw, nrBw) = splitNsaBandwidths(cells, fallback)
@@ -402,7 +408,11 @@ fun bandwidthLabelForTechnology(
         fallback
     }
 
-    val widths = if (servingCells.isNotEmpty()) {
+    val widths = if (technology == "NR" && fallbackForTechnology.isNotEmpty()) {
+        // Samsung can expose fewer NR CellInfo objects than active NR physical
+        // carriers. Preserve every bandwidth that survived RAT attribution.
+        fallbackForTechnology
+    } else if (servingCells.isNotEmpty()) {
         val mapped = servingCells.mapIndexedNotNull { index, cell ->
             cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
                 ?: fallbackForTechnology.getOrNull(index)

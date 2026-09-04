@@ -175,6 +175,79 @@ class NetworkInfoTest {
     }
 
     @Test
+    fun nsaBandwidths_matchesObservedThreeLteAndTwoNrCarriers() {
+        // Live 3-1-1_n28-n41 capture: CellInfo exposes all three LTE widths but
+        // ServiceState contains only the LTE PCell followed by both NR widths.
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 10_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+        val bandwidths = listOf(15_000, 90_000, 20_000)
+
+        assertEquals(
+            listOf(15_000) to listOf(90_000, 20_000),
+            splitNsaBandwidths(cells, bandwidths)
+        )
+        assertEquals("15+10+15 MHz", lteBandwidthLabel(cells, bandwidths))
+        assertEquals("90+20 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+    }
+
+    @Test
+    fun nsaBandwidths_preservesLowBandwidthNrAlongsideWideNr() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(15_000) to listOf(100_000, 20_000),
+            splitNsaBandwidths(cells, listOf(15_000, 100_000, 20_000))
+        )
+    }
+
+    @Test
+    fun nsaBandwidths_doesNotGuessLowNrWhenLteBandwidthIsUnknown() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(15_000, 20_000) to emptyList<Int>(),
+            splitNsaBandwidths(cells, listOf(15_000, 20_000))
+        )
+        assertEquals("Unknown", bandwidthLabelForTechnology("NR", cells, listOf(15_000, 20_000)))
+    }
+
+    @Test
+    fun nsaBandwidths_acceptsWideNrWhenLteBandwidthIsUnknown() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+
+        assertEquals(
+            listOf(15_000) to listOf(90_000),
+            splitNsaBandwidths(cells, listOf(15_000, 90_000))
+        )
+    }
+
+    @Test
+    fun lteOnlyBandwidths_areNeverSplitAsNr() {
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, bandwidthKhz = 10_000)
+        )
+        val bandwidths = listOf(15_000, 10_000)
+
+        assertEquals(bandwidths to emptyList<Int>(), splitNsaBandwidths(cells, bandwidths))
+        assertEquals(bandwidths, lteBandwidthsForNsa(cells, bandwidths))
+        assertEquals("Unknown", bandwidthLabelForTechnology("NR", cells, bandwidths))
+    }
+
+    @Test
     fun nrSaCarrierAggregation_usesBandwidthsFormat() {
         val cells = listOf(
             NetworkCell("NR", NetworkCellRole.PRIMARY, 0, true, band = 41),

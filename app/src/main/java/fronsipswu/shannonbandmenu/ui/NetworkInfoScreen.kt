@@ -221,21 +221,11 @@ fun NetworkInfoScreen(
                                 NoticeCard("No primary serving cell is currently reported.")
                             }
                         }
-                        val nrBandwidth = bandwidthLabelForTechnology(
-                            "NR",
-                            subscription.cells,
-                            subscription.bandwidthsKhz
-                        ).takeIf { it != "Unknown" }
-
                         itemsIndexed(
                             primaryCells,
                             key = { index, cell -> cellKey(subscription, cell, "p$index") }
                         ) { _, cell ->
-                            CellCard(
-                                cell,
-                                title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}",
-                                nrBandwidthOverride = nrBandwidth
-                            )
+                            CellCard(cell, title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}")
                         }
 
                         if (secondaryCells.isNotEmpty()) {
@@ -261,8 +251,7 @@ fun NetworkInfoScreen(
                                             DetailsCard(
                                                 rows = secondaryCellRows(
                                                     cells,
-                                                    includeCellLabels = technology != "NR",
-                                                    nrBandwidthOverride = if (technology == "NR") nrBandwidth else null
+                                                    includeCellLabels = technology != "NR"
                                                 )
                                             )
                                         }
@@ -274,12 +263,7 @@ fun NetworkInfoScreen(
                                 }
                                 item(key = "secondary-cells-${subscription.subscriptionId}") {
                                     // Telephony preserves Shannon/NSG SCell ordering.
-                                    DetailsCard(
-                                        rows = secondaryCellRows(
-                                            secondaryCells,
-                                            nrBandwidthOverride = nrBandwidth
-                                        )
-                                    )
+                                    DetailsCard(rows = secondaryCellRows(secondaryCells))
                                 }
                             }
                         }
@@ -495,31 +479,24 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun CellCard(
     cell: NetworkCell,
-    title: String,
-    nrBandwidthOverride: String? = null
+    title: String
 ) {
-    DetailsCard(rows = cellRows(cell, nrBandwidthOverride), title = title)
+    DetailsCard(rows = cellRows(cell), title = title)
 }
 
-private fun cellRows(
-    cell: NetworkCell,
-    nrBandwidthOverride: String? = null
-): List<Pair<String, String>> = buildList {
+private fun cellRows(cell: NetworkCell): List<Pair<String, String>> = buildList {
     when (cell.technology) {
         "LTE" -> addLteRows(cell)
-        "NR" -> addNrRows(cell, nrBandwidthOverride)
+        "NR" -> addNrRows(cell)
         else -> addLegacyRows(cell)
     }
 }
 
 private fun secondaryCellRows(
     cells: List<NetworkCell>,
-    includeCellLabels: Boolean = true,
-    nrBandwidthOverride: String? = null
+    includeCellLabels: Boolean = true
 ): List<Pair<String, String>> {
-    val rowsByCell = cells.map { cell ->
-        cellRows(cell, nrBandwidthOverride = if (cell.technology == "NR") nrBandwidthOverride else null)
-    }
+    val rowsByCell = cells.map(::cellRows)
     val labels = rowsByCell.flatMap { rows -> rows.map { it.first } }.distinct()
 
     return labels.mapNotNull { label ->
@@ -567,10 +544,7 @@ private fun MutableList<Pair<String, String>>.addLteRows(cell: NetworkCell) {
     }
 }
 
-private fun MutableList<Pair<String, String>>.addNrRows(
-    cell: NetworkCell,
-    nrBandwidthOverride: String? = null
-) {
+private fun MutableList<Pair<String, String>>.addNrRows(cell: NetworkCell) {
     cell.physicalId?.let { add("PCI" to it.toString()) }
     if (cell.role == NetworkCellRole.PRIMARY) {
         cell.cellId?.let { add("NCI" to it.toString()) }
@@ -579,7 +553,7 @@ private fun MutableList<Pair<String, String>>.addNrRows(
         add("NR-ARFCN" to arfcn.toString())
         nrFrequencyForArfcn(arfcn)?.let { add("Frequency" to "${formatDecimal(it)} MHz") }
     }
-    val bandwidthText = nrBandwidthOverride ?: cell.bandwidthKhz?.let(::formatBandwidth)
+    val bandwidthText = cell.bandwidthKhz?.let(::formatBandwidth)
     if (cell.role == NetworkCellRole.SECONDARY) {
         bandwidthText?.let { add("Bandwidth" to it) }
         cell.band?.let { add("Band" to "n$it") }
