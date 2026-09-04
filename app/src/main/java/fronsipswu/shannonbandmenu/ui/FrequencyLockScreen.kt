@@ -118,7 +118,7 @@ fun FrequencyLockScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Text(
-                    "Leave any field empty to clear that constraint. Applying or resetting restarts the cellular modem, so service will disconnect temporarily.",
+                    "Leave any field empty then apply to clear that specific lock. Applying or resetting will perform a full modem reboot, which will terminate your active NSG session.\n\nNote: Single ARFCN lock will disable carrier aggregation. Multi-ARFCN lock is only supported for LTE.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -154,7 +154,7 @@ fun FrequencyLockScreen(
                     label = { Text("LTE PCI") },
                     placeholder = { Text("Input one PCI") },
                     supportingText = { Text("0–503") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     singleLine = true,
                     enabled = !isRefreshing,
                     modifier = Modifier.fillMaxWidth()
@@ -171,7 +171,7 @@ fun FrequencyLockScreen(
                     label = { Text("NR-ARFCN") },
                     placeholder = { Text("Input one NR-ARFCN") },
                     supportingText = { Text("1–3279165") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     singleLine = true,
                     enabled = !isRefreshing,
                     modifier = Modifier.fillMaxWidth()
@@ -188,7 +188,7 @@ fun FrequencyLockScreen(
                     label = { Text("NR PCI") },
                     placeholder = { Text("Input one PCI") },
                     supportingText = { Text("0–1007") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     singleLine = true,
                     enabled = !isRefreshing,
                     modifier = Modifier.fillMaxWidth()

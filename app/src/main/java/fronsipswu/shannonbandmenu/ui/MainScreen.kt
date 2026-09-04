@@ -84,7 +84,7 @@ fun MainScreen(
     visibleNrNsaBands: Set<Int>? = null,
     onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
     val pagerScope = rememberCoroutineScope()
 
     fun selectPage(page: Int) {
@@ -109,10 +109,10 @@ fun MainScreen(
                     icon = {
                         Icon(
                             painterResource(R.drawable.ic_network_info),
-                            contentDescription = "Network Info"
+                            contentDescription = "Telephony Info"
                         )
                     },
-                    label = { Text("Network") }
+                    label = { Text("Telephony") }
                 )
                 NavigationBarItem(
                     selected = pagerState.currentPage == 1,

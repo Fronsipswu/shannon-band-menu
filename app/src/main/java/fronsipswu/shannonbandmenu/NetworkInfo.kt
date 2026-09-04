@@ -188,7 +188,7 @@ fun carrierAggregationLabel(
     val servingCells = primary + secondary
 
     val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
-    val carriers = max(servingCells.size, fallback.size)
+    val carriers = if (servingCells.isNotEmpty()) servingCells.size else fallback.size
     if (carriers <= 1) return "No"
 
     val bandList = servingCells.mapNotNull { cell ->
@@ -198,7 +198,7 @@ fun carrierAggregationLabel(
         }
     }
 
-    return if (bandList.isNotEmpty()) {
+    return if (bandList.size > 1) {
         "${carriers}CA (${bandList.joinToString("+")})"
     } else {
         "${carriers}CA"
@@ -254,6 +254,34 @@ fun lteBandwidthsForNsa(
     return if (lteServingCount > 0) valid.take(lteServingCount) else valid
 }
 
+fun lteBandwidthLabel(
+    cells: List<NetworkCell>,
+    bandwidthsKhz: List<Int>
+): String? {
+    val lteCells = cells.filter { it.technology == "LTE" }
+    val lteBandwidths = lteBandwidthsForNsa(cells, bandwidthsKhz)
+    val widths = if (lteCells.isNotEmpty()) {
+        val mapped = lteCells.mapIndexedNotNull { index, cell ->
+            cell.bandwidthKhz?.takeIf { it > 0 && it != CellInfo.UNAVAILABLE }
+                ?: lteBandwidths.getOrNull(index)
+        }
+        mapped.ifEmpty { lteBandwidths }
+    } else {
+        lteBandwidths
+    }
+    if (widths.isEmpty()) return null
+    val components = widths.joinToString("+") { khz ->
+        val m = khz / 1000.0
+        if (m % 1.0 == 0.0) m.toInt().toString() else m.toString()
+    }
+    return "$components MHz"
+}
+
+fun lteBandwidthLabelForNsa(
+    cells: List<NetworkCell>,
+    bandwidthsKhz: List<Int>
+): String? = lteBandwidthLabel(cells, bandwidthsKhz)
+
 fun nrSaCarrierAggregationLabel(
     cells: List<NetworkCell>,
     bandwidthsKhz: List<Int>
@@ -277,14 +305,23 @@ fun resolveNrBandwidths(
     bandwidthsKhz: List<Int>
 ): List<NetworkCell> {
     if (bandwidthsKhz.isEmpty()) return cells
-    var secondaryIndex = 0
+    val fallback = bandwidthsKhz.filter { it > 0 && it != CellInfo.UNAVAILABLE }
+    val lteServingCount = cells.count {
+        (it.role == NetworkCellRole.PRIMARY || it.role == NetworkCellRole.SECONDARY) &&
+            it.technology == "LTE"
+    }
+    val nrBandwidths = fallback.drop(lteServingCount)
+    val hasPrimaryNr = cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "NR" }
+    var secondaryIndex = if (hasPrimaryNr) 1 else 0
+
     return cells.map { cell ->
         if (cell.technology == "NR" && cell.bandwidthKhz == null) {
             val bw = if (cell.role == NetworkCellRole.PRIMARY) {
-                bandwidthsKhz.firstOrNull()
+                nrBandwidths.firstOrNull()
             } else {
+                val found = nrBandwidths.getOrNull(secondaryIndex)
                 secondaryIndex++
-                bandwidthsKhz.getOrNull(secondaryIndex)
+                found
             }
             if (bw != null) cell.copy(bandwidthKhz = bw) else cell
         } else {
@@ -386,7 +423,7 @@ class NetworkInfoSource(private val context: Context) {
                     cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "NR" } -> true
                     else -> false
                 }
-                val resolvedCells = if (isNrSa) resolveNrBandwidths(cells, bandwidthsKhz) else cells
+                val resolvedCells = resolveNrBandwidths(cells, bandwidthsKhz)
                 NetworkSubscription(
                     subscriptionId = subscription.subscriptionId,
                     simSlot = subscription.simSlotIndex,

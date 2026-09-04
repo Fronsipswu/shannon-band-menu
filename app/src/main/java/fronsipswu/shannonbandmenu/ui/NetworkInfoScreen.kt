@@ -49,9 +49,9 @@ import fronsipswu.shannonbandmenu.R
 import fronsipswu.shannonbandmenu.bandwidthLabelForTechnology
 import fronsipswu.shannonbandmenu.carrierAggregationLabel
 import fronsipswu.shannonbandmenu.isNrNsa
+import fronsipswu.shannonbandmenu.lteBandwidthLabel
 import fronsipswu.shannonbandmenu.lteBandwidthsForNsa
 import fronsipswu.shannonbandmenu.nrSaCarrierAggregationLabel
-import fronsipswu.shannonbandmenu.totalBandwidthLabel
 import fronsipswu.shannonbandmenu.lteFrequenciesForEarfcn
 import fronsipswu.shannonbandmenu.lteTimingAdvanceMeters
 import fronsipswu.shannonbandmenu.nrFrequencyForArfcn
@@ -127,7 +127,7 @@ fun NetworkInfoScreen(
 
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
         TopAppBar(
-            title = { Text("Network Info") },
+            title = { Text("Telephony API Info") },
             actions = {
                 IconButton(onClick = { monitoringFrozen = !monitoringFrozen }) {
                     Icon(
@@ -221,11 +221,21 @@ fun NetworkInfoScreen(
                                 NoticeCard("No primary serving cell is currently reported.")
                             }
                         }
+                        val nrBandwidth = bandwidthLabelForTechnology(
+                            "NR",
+                            subscription.cells,
+                            subscription.bandwidthsKhz
+                        ).takeIf { it != "Unknown" }
+
                         itemsIndexed(
                             primaryCells,
                             key = { index, cell -> cellKey(subscription, cell, "p$index") }
                         ) { _, cell ->
-                            CellCard(cell, title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}")
+                            CellCard(
+                                cell,
+                                title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}",
+                                nrBandwidthOverride = nrBandwidth
+                            )
                         }
 
                         if (secondaryCells.isNotEmpty()) {
@@ -251,7 +261,8 @@ fun NetworkInfoScreen(
                                             DetailsCard(
                                                 rows = secondaryCellRows(
                                                     cells,
-                                                    includeCellLabels = technology != "NR"
+                                                    includeCellLabels = technology != "NR",
+                                                    nrBandwidthOverride = if (technology == "NR") nrBandwidth else null
                                                 )
                                             )
                                         }
@@ -263,7 +274,12 @@ fun NetworkInfoScreen(
                                 }
                                 item(key = "secondary-cells-${subscription.subscriptionId}") {
                                     // Telephony preserves Shannon/NSG SCell ordering.
-                                    DetailsCard(rows = secondaryCellRows(secondaryCells))
+                                    DetailsCard(
+                                        rows = secondaryCellRows(
+                                            secondaryCells,
+                                            nrBandwidthOverride = nrBandwidth
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -366,7 +382,7 @@ private fun ServicesSection(subscription: NetworkSubscription) {
             val lteCells = subscription.cells.filter { it.technology == "LTE" }
             val lteBandwidths = lteBandwidthsForNsa(subscription.cells, subscription.bandwidthsKhz)
             add("LTE aggregation" to carrierAggregationLabel(lteCells, lteBandwidths))
-            totalBandwidthLabel(lteCells, lteBandwidths)?.let {
+            lteBandwidthLabel(subscription.cells, subscription.bandwidthsKhz)?.let {
                 add("LTE Bandwidth" to it)
             }
             add(
@@ -386,16 +402,18 @@ private fun ServicesSection(subscription: NetworkSubscription) {
         } else if (subscription.dataNetwork == "LTE" ||
             subscription.cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "LTE" }
         ) {
+            val lteCells = subscription.cells.filter { it.technology == "LTE" }
+            val lteBandwidths = lteBandwidthsForNsa(subscription.cells, subscription.bandwidthsKhz)
             add(
                 "Carrier aggregation" to carrierAggregationLabel(
-                    subscription.cells,
-                    subscription.bandwidthsKhz
+                    lteCells,
+                    lteBandwidths
                 )
             )
-            totalBandwidthLabel(
+            lteBandwidthLabel(
                 subscription.cells,
                 subscription.bandwidthsKhz
-            )?.let { add("Total bandwidth" to it) }
+            )?.let { add("LTE Bandwidth" to it) }
         }
         add("Data state" to subscription.dataState)
     }
@@ -477,24 +495,31 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun CellCard(
     cell: NetworkCell,
-    title: String
+    title: String,
+    nrBandwidthOverride: String? = null
 ) {
-    DetailsCard(rows = cellRows(cell), title = title)
+    DetailsCard(rows = cellRows(cell, nrBandwidthOverride), title = title)
 }
 
-private fun cellRows(cell: NetworkCell): List<Pair<String, String>> = buildList {
+private fun cellRows(
+    cell: NetworkCell,
+    nrBandwidthOverride: String? = null
+): List<Pair<String, String>> = buildList {
     when (cell.technology) {
         "LTE" -> addLteRows(cell)
-        "NR" -> addNrRows(cell)
+        "NR" -> addNrRows(cell, nrBandwidthOverride)
         else -> addLegacyRows(cell)
     }
 }
 
 private fun secondaryCellRows(
     cells: List<NetworkCell>,
-    includeCellLabels: Boolean = true
+    includeCellLabels: Boolean = true,
+    nrBandwidthOverride: String? = null
 ): List<Pair<String, String>> {
-    val rowsByCell = cells.map(::cellRows)
+    val rowsByCell = cells.map { cell ->
+        cellRows(cell, nrBandwidthOverride = if (cell.technology == "NR") nrBandwidthOverride else null)
+    }
     val labels = rowsByCell.flatMap { rows -> rows.map { it.first } }.distinct()
 
     return labels.mapNotNull { label ->
@@ -526,7 +551,7 @@ private fun MutableList<Pair<String, String>>.addLteRows(cell: NetworkCell) {
     cell.bandwidthKhz?.let { add("Bandwidth" to formatBandwidth(it)) }
     cell.rsrp?.let { add("RSRP" to "$it dBm") }
     cell.rsrq?.let { add("RSRQ" to "$it dB") }
-    cell.sinr?.let { add("RSSNR" to "$it dB") }
+    cell.sinr?.let { add("SINR" to "$it dB") }
     cell.rssi?.let { add("RSSI" to "$it dBm") }
     cell.cqi?.let { add("CQI" to it.toString()) }
     if (cell.role == NetworkCellRole.PRIMARY) {
@@ -542,7 +567,10 @@ private fun MutableList<Pair<String, String>>.addLteRows(cell: NetworkCell) {
     }
 }
 
-private fun MutableList<Pair<String, String>>.addNrRows(cell: NetworkCell) {
+private fun MutableList<Pair<String, String>>.addNrRows(
+    cell: NetworkCell,
+    nrBandwidthOverride: String? = null
+) {
     cell.physicalId?.let { add("PCI" to it.toString()) }
     if (cell.role == NetworkCellRole.PRIMARY) {
         cell.cellId?.let { add("NCI" to it.toString()) }
@@ -551,8 +579,14 @@ private fun MutableList<Pair<String, String>>.addNrRows(cell: NetworkCell) {
         add("NR-ARFCN" to arfcn.toString())
         nrFrequencyForArfcn(arfcn)?.let { add("Frequency" to "${formatDecimal(it)} MHz") }
     }
-    cell.band?.let { add("Band" to "n$it") }
-    cell.bandwidthKhz?.let { add("Bandwidth" to formatBandwidth(it)) }
+    val bandwidthText = nrBandwidthOverride ?: cell.bandwidthKhz?.let(::formatBandwidth)
+    if (cell.role == NetworkCellRole.SECONDARY) {
+        bandwidthText?.let { add("Bandwidth" to it) }
+        cell.band?.let { add("Band" to "n$it") }
+    } else {
+        cell.band?.let { add("Band" to "n$it") }
+        bandwidthText?.let { add("Bandwidth" to it) }
+    }
     cell.rsrp?.let { add("SS-RSRP" to "$it dBm") }
     cell.rsrq?.let { add("SS-RSRQ" to "$it dB") }
     cell.sinr?.let { add("SS-SINR" to "$it dB") }

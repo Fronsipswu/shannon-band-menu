@@ -84,7 +84,9 @@ class NetworkInfoTest {
         )
 
         assertEquals("No", carrierAggregationLabel(singleCell, listOf(20_000)))
+        assertEquals("No", carrierAggregationLabel(singleCell, listOf(20_000, 90_000)))
         assertEquals("20 MHz", totalBandwidthLabel(singleCell, listOf(20_000)))
+        assertEquals("20 MHz", totalBandwidthLabel(singleCell, listOf(20_000, 90_000)))
     }
 
     @Test
@@ -102,8 +104,12 @@ class NetworkInfoTest {
         assertEquals(listOf(15_000, 15_000, 10_000), lteBandwidths)
         assertEquals("3CA (B3+B1+B1)", carrierAggregationLabel(lteCells, lteBandwidths))
         assertEquals("40 MHz (15+15+10)", totalBandwidthLabel(lteCells, lteBandwidths))
+        assertEquals("15+15+10 MHz", lteBandwidthLabelForNsa(cells, bandwidths))
         assertEquals("90 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
         assertEquals(true, isNrNsa(cells))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(90_000, resolved[3].bandwidthKhz)
     }
 
     @Test
