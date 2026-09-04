@@ -53,9 +53,6 @@ data class NetworkCell(
     val sinr: Int? = null,
     val cqi: Int? = null,
     val timingAdvance: Int? = null,
-    val nrCsiRsrp: Int? = null,
-    val nrCsiRsrq: Int? = null,
-    val nrCsiSinr: Int? = null,
     val ageMillis: Long? = null
 )
 
@@ -276,20 +273,19 @@ fun splitNsaBandwidths(
     val nrWidths = if (allLteWidthsKnown) {
         val oneWidthPerReportedCell = nrServingCount > 0 &&
             valid.size == lteCells.size + nrServingCount
-        val onlyLowBandwidthCandidates = unmatched.all { it <= 20_000 }
         val candidatesDistinctFromLte = unmatched.filterNot { it in knownLteWidths }
 
         if (oneWidthPerReportedCell &&
-            onlyLowBandwidthCandidates &&
             unmatched.size > nrServingCount &&
             candidatesDistinctFromLte.size >= nrServingCount
         ) {
             // ServiceState bandwidths are ratcheted and can retain a larger, stale
             // configuration while CellInfo already describes the current LTE cells.
-            // When a complete-looking array leaves too many low-band NR candidates,
-            // prefer candidates that are not also current LTE widths. Do not apply
-            // this to wide NR or incomplete arrays: one NR CellInfo can represent
-            // multiple NR physical carriers in those cases.
+            // When a complete-looking array leaves too many NR candidates, prefer
+            // candidates that are not also current LTE widths. This also handles a
+            // stale LTE-sized entry next to a valid wide NR carrier. Do not apply
+            // this to incomplete arrays: one NR CellInfo can represent multiple NR
+            // physical carriers in those cases.
             candidatesDistinctFromLte
         } else {
             unmatched
@@ -667,9 +663,6 @@ class NetworkInfoSource(private val context: Context) {
             } else {
                 null
             },
-            nrCsiRsrp = available(signal.csiRsrp),
-            nrCsiRsrq = available(signal.csiRsrq),
-            nrCsiSinr = availableNrMetric(signal.csiSinr),
             ageMillis = ageMillis
         )
     }

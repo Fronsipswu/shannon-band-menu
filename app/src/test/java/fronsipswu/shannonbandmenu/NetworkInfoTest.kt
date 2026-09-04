@@ -195,6 +195,27 @@ class NetworkInfoTest {
     }
 
     @Test
+    fun nsaBandwidths_ignoresRatchetedLteDuplicateBesideWideNr() {
+        // Live B1+B1+B3+n28+n41 capture. CellInfo reports LTE 15+10+15 MHz,
+        // while ServiceState ratchets to [15, 15, 15, 90] and omits n28's
+        // 20 MHz carrier. Prefer missing n28 over misreporting the stale 15 as NR.
+        val cells = listOf(
+            NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, band = 3, bandwidthKhz = 15_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 10_000),
+            NetworkCell("LTE", NetworkCellRole.SECONDARY, 0, false, band = 1, bandwidthKhz = 15_000),
+            NetworkCell("NR", NetworkCellRole.SECONDARY, 0, false)
+        )
+        val bandwidths = listOf(15_000, 15_000, 15_000, 90_000)
+
+        assertEquals(listOf(90_000), splitNsaBandwidths(cells, bandwidths).second)
+        assertEquals("15+10+15 MHz", lteBandwidthLabel(cells, bandwidths))
+        assertEquals("90 MHz", bandwidthLabelForTechnology("NR", cells, bandwidths))
+
+        val resolved = resolveNrBandwidths(cells, bandwidths)
+        assertEquals(90_000, resolved[3].bandwidthKhz)
+    }
+
+    @Test
     fun nsaBandwidths_preservesNrWidthSharedWithLteWhenItIsOnlyCandidate() {
         val cells = listOf(
             NetworkCell("LTE", NetworkCellRole.PRIMARY, 0, true, bandwidthKhz = 15_000),

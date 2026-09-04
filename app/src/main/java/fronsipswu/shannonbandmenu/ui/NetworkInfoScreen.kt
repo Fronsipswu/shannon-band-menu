@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
@@ -36,10 +37,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import fronsipswu.shannonbandmenu.NetworkCell
 import fronsipswu.shannonbandmenu.NetworkCellRole
 import fronsipswu.shannonbandmenu.NetworkInfoSnapshot
@@ -225,7 +228,11 @@ fun NetworkInfoScreen(
                             primaryCells,
                             key = { index, cell -> cellKey(subscription, cell, "p$index") }
                         ) { _, cell ->
-                            CellCard(cell, title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}")
+                            CellCard(
+                                cell,
+                                title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}",
+                                showNrNsaMetrics = nrNsa
+                            )
                         }
 
                         if (secondaryCells.isNotEmpty()) {
@@ -248,10 +255,12 @@ fun NetworkInfoScreen(
                                             key = "secondary-cells-${subscription.subscriptionId}-$technology"
                                         ) {
                                             // Telephony preserves Shannon/NSG SCell ordering.
-                                            DetailsCard(
+                                            SignalDetailsCard(
                                                 rows = secondaryCellRows(
                                                     cells,
-                                                    includeCellLabels = technology != "NR"
+                                                    includeCellLabels = technology != "NR",
+                                                    showNrNsaMetrics = nrNsa,
+                                                    onlyCoreNrNsaRows = technology == "NR"
                                                 )
                                             )
                                         }
@@ -263,7 +272,12 @@ fun NetworkInfoScreen(
                                 }
                                 item(key = "secondary-cells-${subscription.subscriptionId}") {
                                     // Telephony preserves Shannon/NSG SCell ordering.
-                                    DetailsCard(rows = secondaryCellRows(secondaryCells))
+                                    SignalDetailsCard(
+                                        rows = secondaryCellRows(
+                                            secondaryCells,
+                                            showNrNsaMetrics = nrNsa
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -467,6 +481,94 @@ private fun DetailsCard(
 }
 
 @Composable
+private fun SignalDetailsCard(
+    rows: List<SignalDetailRow>,
+    title: String? = null
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            title?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(bottom = 6.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                )
+            }
+            rows.forEachIndexed { index, row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        "${row.label}:",
+                        modifier = Modifier.weight(0.46f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (row.values.any { it.metric != null }) {
+                        Column(
+                            modifier = Modifier.weight(0.54f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            row.values.forEach { value ->
+                                if (value.metric != null) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        SignalMetricBar(
+                                            value = value,
+                                            modifier = Modifier.width(90.dp)
+                                        )
+                                        value.suffix?.let { suffix ->
+                                            Text(
+                                                suffix,
+                                                modifier = Modifier.padding(start = 4.dp),
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontSize = 11.sp
+                                                ),
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        value.text + value.suffix?.let { " $it" }.orEmpty(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            row.values.joinToString("\n") {
+                                it.text + it.suffix?.let { suffix -> " $suffix" }.orEmpty()
+                            },
+                            modifier = Modifier.weight(0.54f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                if (index != rows.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val CORE_NR_NSA_ROWS = setOf("PCI", "NR-ARFCN", "Frequency", "Bandwidth")
+
+@Composable
 private fun SectionTitle(text: String) {
     Text(
         text,
@@ -479,100 +581,144 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun CellCard(
     cell: NetworkCell,
-    title: String
+    title: String,
+    showNrNsaMetrics: Boolean
 ) {
-    DetailsCard(rows = cellRows(cell), title = title)
+    SignalDetailsCard(
+        rows = cellRows(cell, showNrNsaMetrics),
+        title = title
+    )
 }
 
-private fun cellRows(cell: NetworkCell): List<Pair<String, String>> = buildList {
+private fun cellRows(
+    cell: NetworkCell,
+    showNrNsaMetrics: Boolean
+): List<SignalDetailRow> = buildList {
     when (cell.technology) {
         "LTE" -> addLteRows(cell)
-        "NR" -> addNrRows(cell)
+        "NR" -> addNrRows(cell, showNrNsaMetrics)
         else -> addLegacyRows(cell)
     }
 }
 
 private fun secondaryCellRows(
     cells: List<NetworkCell>,
-    includeCellLabels: Boolean = true
-): List<Pair<String, String>> {
-    val rowsByCell = cells.map(::cellRows)
-    val labels = rowsByCell.flatMap { rows -> rows.map { it.first } }.distinct()
+    includeCellLabels: Boolean = true,
+    showNrNsaMetrics: Boolean = false,
+    onlyCoreNrNsaRows: Boolean = false
+): List<SignalDetailRow> {
+    val rowsByCell = cells.map { cell ->
+        val rows = cellRows(cell, showNrNsaMetrics)
+        if (onlyCoreNrNsaRows && cell.technology == "NR") {
+            rows.filter { it.label in CORE_NR_NSA_ROWS }
+        } else {
+            rows
+        }
+    }
+    val labels = rowsByCell.flatMap { rows -> rows.map { it.label } }.distinct()
 
     return labels.mapNotNull { label ->
         val values = rowsByCell.mapIndexedNotNull { index, rows ->
-            rows.firstOrNull { it.first == label }
-                ?.second
-                ?.let { value ->
-                    if (includeCellLabels) "$value (S${index + 1})" else value
+            rows.firstOrNull { it.label == label }?.values?.map { value ->
+                if (includeCellLabels) {
+                    value.copy(suffix = "(S${index + 1})")
+                } else {
+                    value
                 }
+            }
         }
-        values.takeIf { it.isNotEmpty() }?.joinToString("\n")?.let { label to it }
+        values.takeIf { it.isNotEmpty() }?.flatten()?.let { SignalDetailRow(label, it) }
     }
 }
 
-private fun MutableList<Pair<String, String>>.addLteRows(cell: NetworkCell) {
-    cell.physicalId?.let { add("PCI" to it.toString()) }
+private fun MutableList<SignalDetailRow>.addPlain(label: String, value: String) {
+    add(SignalDetailRow(label, listOf(SignalDetailValue(value))))
+}
+
+private fun MutableList<SignalDetailRow>.addSignal(
+    label: String,
+    value: Int?,
+    metric: SignalMetric,
+    unit: String
+) {
+    add(
+        SignalDetailRow(
+            label,
+            listOf(
+                SignalDetailValue(
+                    text = value?.let { "$it $unit" } ?: "\u2014",
+                    metric = metric,
+                    rawValue = value
+                )
+            )
+        )
+    )
+}
+
+private fun MutableList<SignalDetailRow>.addLteRows(cell: NetworkCell) {
+    cell.physicalId?.let { addPlain("PCI", it.toString()) }
     cell.cellId?.let { ci ->
-        add("ECI" to "$ci (eNB ${ci shr 8}, cell ${ci and 0xff})")
+        addPlain("ECI", "$ci\n(eNB ${ci shr 8}, cell ${ci and 0xff})")
     }
-    cell.channel?.let { add("EARFCN" to it.toString()) }
-    cell.band?.let { add("Band" to "B$it") }
+    cell.channel?.let { addPlain("EARFCN", it.toString()) }
+    cell.band?.let { addPlain("Band", "B$it") }
     cell.channel?.let { earfcn ->
         lteFrequenciesForEarfcn(earfcn)?.let { frequencies ->
             val downlink = formatDecimal(frequencies.downlinkMhz)
             val uplink = frequencies.uplinkMhz?.let(::formatDecimal) ?: "—"
-            add("Downlink/Uplink" to "$downlink / $uplink MHz")
+            addPlain("Downlink/Uplink", "$downlink / $uplink MHz")
         }
     }
-    cell.bandwidthKhz?.let { add("Bandwidth" to formatBandwidth(it)) }
-    cell.rsrp?.let { add("RSRP" to "$it dBm") }
-    cell.rsrq?.let { add("RSRQ" to "$it dB") }
-    cell.sinr?.let { add("SINR" to "$it dB") }
-    cell.rssi?.let { add("RSSI" to "$it dBm") }
-    cell.cqi?.let { add("CQI" to it.toString()) }
+    cell.bandwidthKhz?.let { addPlain("Bandwidth", formatBandwidth(it)) }
+    addSignal("RSRP", cell.rsrp, SignalMetric.RSRP, "dBm")
+    addSignal("RSRQ", cell.rsrq, SignalMetric.RSRQ, "dB")
+    addSignal("SINR", cell.sinr, SignalMetric.SINR, "dB")
+    cell.rssi?.let { addPlain("RSSI", "$it dBm") }
+    cell.cqi?.let { addPlain("CQI", it.toString()) }
     if (cell.role == NetworkCellRole.PRIMARY) {
         cell.timingAdvance?.let { timingAdvance ->
-            add("Timing advance" to timingAdvance.toString())
+            addPlain("Timing advance", timingAdvance.toString())
             lteTimingAdvanceMeters(timingAdvance)?.let { distance ->
-                add(
-                    "Estimated distance" to
-                        "${formatDecimal(distance)} m / ${formatDecimal(distance * 3.28084)} ft"
+                addPlain(
+                    "Estimated distance",
+                    "${formatDecimal(distance)} m / ${formatDecimal(distance * 3.28084)} ft"
                 )
             }
         }
     }
 }
 
-private fun MutableList<Pair<String, String>>.addNrRows(cell: NetworkCell) {
-    cell.physicalId?.let { add("PCI" to it.toString()) }
+private fun MutableList<SignalDetailRow>.addNrRows(
+    cell: NetworkCell,
+    showNrNsaMetrics: Boolean
+) {
+    cell.physicalId?.let { addPlain("PCI", it.toString()) }
     if (cell.role == NetworkCellRole.PRIMARY) {
-        cell.cellId?.let { add("NCI" to it.toString()) }
+        cell.cellId?.let { addPlain("NCI", it.toString()) }
     }
     cell.channel?.let { arfcn ->
-        add("NR-ARFCN" to arfcn.toString())
-        nrFrequencyForArfcn(arfcn)?.let { add("Frequency" to "${formatDecimal(it)} MHz") }
+        addPlain("NR-ARFCN", arfcn.toString())
+        nrFrequencyForArfcn(arfcn)?.let { addPlain("Frequency", "${formatDecimal(it)} MHz") }
     }
     val bandwidthText = cell.bandwidthKhz?.let(::formatBandwidth)
     if (cell.role == NetworkCellRole.SECONDARY) {
-        bandwidthText?.let { add("Bandwidth" to it) }
-        cell.band?.let { add("Band" to "n$it") }
+        bandwidthText?.let { addPlain("Bandwidth", it) }
+        cell.band?.let { addPlain("Band", "n$it") }
     } else {
-        cell.band?.let { add("Band" to "n$it") }
-        bandwidthText?.let { add("Bandwidth" to it) }
+        cell.band?.let { addPlain("Band", "n$it") }
+        bandwidthText?.let { addPlain("Bandwidth", it) }
     }
-    cell.rsrp?.let { add("SS-RSRP" to "$it dBm") }
-    cell.rsrq?.let { add("SS-RSRQ" to "$it dB") }
-    cell.sinr?.let { add("SS-SINR" to "$it dB") }
-    cell.nrCsiRsrp?.let { add("CSI-RSRP" to "$it dBm") }
-    cell.nrCsiRsrq?.let { add("CSI-RSRQ" to "$it dB") }
-    cell.nrCsiSinr?.let { add("CSI-SINR" to "$it dB") }
+    addSignal("SS-RSRP", cell.rsrp, SignalMetric.RSRP, "dBm")
+    addSignal("SS-RSRQ", cell.rsrq, SignalMetric.RSRQ, "dB")
+    if (showNrNsaMetrics) {
+        addSignal("SS-SINR", cell.sinr, SignalMetric.SINR, "dB")
+    }
     if (cell.role == NetworkCellRole.PRIMARY) {
-        cell.timingAdvance?.let { add("Timing advance" to "$it µs") }
+        cell.timingAdvance?.let { addPlain("Timing advance", "$it \u00b5s") }
     }
 }
 
-private fun MutableList<Pair<String, String>>.addLegacyRows(cell: NetworkCell) {
+private fun MutableList<SignalDetailRow>.addLegacyRows(cell: NetworkCell) {
     cell.physicalId?.let {
         val label = when (cell.technology) {
             "WCDMA" -> "PSC"
@@ -580,26 +726,26 @@ private fun MutableList<Pair<String, String>>.addLegacyRows(cell: NetworkCell) {
             "TD-SCDMA" -> "CPID"
             else -> "Physical ID"
         }
-        add(label to it.toString())
+        addPlain(label, it.toString())
     }
-    cell.cellId?.let { add("Cell ID" to it.toString()) }
+    cell.cellId?.let { addPlain("Cell ID", it.toString()) }
     cell.channel?.let {
         val label = when (cell.technology) {
             "WCDMA", "TD-SCDMA" -> "UARFCN"
             "GSM" -> "ARFCN"
             else -> "Channel"
         }
-        add(label to it.toString())
+        addPlain(label, it.toString())
     }
     when (cell.technology) {
         "WCDMA" -> {
-            cell.rsrp?.let { add("RSCP" to "$it dBm") }
-            cell.sinr?.let { add("Ec/No" to "$it dB") }
+            cell.rsrp?.let { addPlain("RSCP", "$it dBm") }
+            cell.sinr?.let { addPlain("Ec/No", "$it dB") }
         }
-        "TD-SCDMA" -> cell.rsrp?.let { add("RSCP" to "$it dBm") }
+        "TD-SCDMA" -> cell.rsrp?.let { addPlain("RSCP", "$it dBm") }
         "GSM" -> {
-            cell.rssi?.let { add("RSSI" to "$it dBm") }
-            cell.timingAdvance?.let { add("Timing advance" to it.toString()) }
+            cell.rssi?.let { addPlain("RSSI", "$it dBm") }
+            cell.timingAdvance?.let { addPlain("Timing advance", it.toString()) }
         }
     }
 }
