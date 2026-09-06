@@ -10,6 +10,7 @@ A root Android app for locking bands on Shannon Google Pixels. Supports GSM, WCD
 
 - Root access (Magisk/KernelSU)
 - Android 11 or newer
+- Shannon-based Google Pixel devices
 
 ## Building
 
