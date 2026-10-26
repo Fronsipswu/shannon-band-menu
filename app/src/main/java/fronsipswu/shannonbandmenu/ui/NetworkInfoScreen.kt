@@ -1,25 +1,31 @@
 package fronsipswu.shannonbandmenu.ui
 
 import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,10 +43,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fronsipswu.shannonbandmenu.NetworkCell
@@ -49,14 +62,8 @@ import fronsipswu.shannonbandmenu.NetworkInfoSnapshot
 import fronsipswu.shannonbandmenu.NetworkInfoSource
 import fronsipswu.shannonbandmenu.NetworkSubscription
 import fronsipswu.shannonbandmenu.R
-import fronsipswu.shannonbandmenu.bandwidthLabelForTechnology
-import fronsipswu.shannonbandmenu.carrierAggregationLabel
 import fronsipswu.shannonbandmenu.isNrNsa
-import fronsipswu.shannonbandmenu.lteBandwidthLabel
-import fronsipswu.shannonbandmenu.lteBandwidthsForNsa
-import fronsipswu.shannonbandmenu.nrSaCarrierAggregationLabel
 import fronsipswu.shannonbandmenu.lteFrequenciesForEarfcn
-import fronsipswu.shannonbandmenu.lteTimingAdvanceMeters
 import fronsipswu.shannonbandmenu.nrFrequencyForArfcn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -155,8 +162,8 @@ fun NetworkInfoScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (!phonePermissionGranted || !fineLocationGranted) {
                     item {
@@ -202,85 +209,57 @@ fun NetworkInfoScreen(
                     }
 
                     current.subscriptions.forEach { subscription ->
-                        item(key = "operator-${subscription.subscriptionId}") {
-                            OperatorSection(subscription, current.subscriptions.size > 1)
-                        }
-                        item(key = "services-${subscription.subscriptionId}") {
-                            ServicesSection(subscription)
-                        }
-
+                        val id = subscription.subscriptionId
                         val primaryCells = subscription.cells.filter {
                             it.role == NetworkCellRole.PRIMARY
                         }
-                        val secondaryCells = subscription.cells.filter {
-                            it.role == NetworkCellRole.SECONDARY
-                        }
                         val nrNsa = isNrNsa(subscription.cells)
-                        item(key = "registered-title-${subscription.subscriptionId}") {
-                            SectionTitle("Primary cell")
+
+                        if (current.subscriptions.size > 1) {
+                            item(key = "sim-title-$id") {
+                                SectionTitle("SIM ${subscription.simSlot + 1}")
+                            }
+                        }
+                        // The summary and the primary cell share one card; any
+                        // further primary cell keeps its own card below.
+                        item(key = "summary-$id") {
+                            SummaryCard(subscription, primaryCells.firstOrNull(), nrNsa)
                         }
                         if (primaryCells.isEmpty()) {
-                            item(key = "registered-empty-${subscription.subscriptionId}") {
+                            item(key = "primary-empty-$id") {
                                 NoticeCard("No primary serving cell is currently reported.")
                             }
                         }
-                        itemsIndexed(
-                            primaryCells,
-                            key = { index, cell -> cellKey(subscription, cell, "p$index") }
-                        ) { _, cell ->
-                            CellCard(
-                                cell,
-                                title = "Primary ${cell.technology} · SIM ${cell.simSlot + 1}",
-                                showNrNsaMetrics = nrNsa
-                            )
+                        primaryCells.drop(1).forEachIndexed { index, cell ->
+                            item(key = cellKey(subscription, cell, "p${index + 1}")) {
+                                CellSection(
+                                    title = "Primary ${cell.technology}",
+                                    cell = cell,
+                                    showNrNsaMetrics = nrNsa
+                                )
+                            }
                         }
 
-                        if (secondaryCells.isNotEmpty()) {
-                            if (nrNsa) {
-                                val secondaryNr = secondaryCells.filter { it.technology == "NR" }
-                                val secondaryLte = secondaryCells.filter { it.technology == "LTE" }
-                                listOf(
-                                    "NR" to secondaryNr,
-                                    "LTE" to secondaryLte
-                                ).forEach { (technology, cells) ->
-                                    if (cells.isNotEmpty()) {
-                                        item(
-                                            key = "secondary-title-${subscription.subscriptionId}-$technology"
-                                        ) {
-                                            SectionTitle(
-                                                "Secondary cell $technology (${cells.size})"
-                                            )
-                                        }
-                                        item(
-                                            key = "secondary-cells-${subscription.subscriptionId}-$technology"
-                                        ) {
-                                            // Telephony preserves Shannon/NSG SCell ordering.
-                                            SignalDetailsCard(
-                                                rows = secondaryCellRows(
-                                                    cells,
-                                                    includeCellLabels = technology != "NR",
-                                                    showNrNsaMetrics = nrNsa,
-                                                    onlyCoreNrNsaRows = technology == "NR"
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            } else {
-                                item(key = "secondary-title-${subscription.subscriptionId}") {
-                                    SectionTitle("Secondary cells (${secondaryCells.size})")
-                                }
-                                item(key = "secondary-cells-${subscription.subscriptionId}") {
-                                    // Telephony preserves Shannon/NSG SCell ordering.
-                                    SignalDetailsCard(
-                                        rows = secondaryCellRows(
-                                            secondaryCells,
-                                            showNrNsaMetrics = nrNsa
-                                        )
+                        carrierGroups(subscription, nrNsa).forEach { group ->
+                            item(key = "carriers-$id-${group.title}") {
+                                CarrierSection(group)
+                            }
+                        }
+                        // Secondary cells of any other technology keep a card each.
+                        subscription.cells
+                            .filter {
+                                it.role == NetworkCellRole.SECONDARY &&
+                                    it.technology != "LTE" && it.technology != "NR"
+                            }
+                            .forEachIndexed { index, cell ->
+                                item(key = cellKey(subscription, cell, "s$index")) {
+                                    CellSection(
+                                        title = "Secondary ${cell.technology}",
+                                        cell = cell,
+                                        showNrNsaMetrics = nrNsa
                                     )
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -352,373 +331,482 @@ private fun NoticeCard(message: String, isError: Boolean = false) {
     }
 }
 
-@Composable
-private fun OperatorSection(subscription: NetworkSubscription, showSim: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionTitle(if (showSim) "Operator · SIM ${subscription.simSlot + 1}" else "Operator")
-        DetailsCard(
-            rows = listOf(
-                "Name" to subscription.operatorName.ifBlank { "Unknown" },
-                "MCC / MNC" to listOfNotNull(subscription.mcc, subscription.mnc)
-                    .joinToString(" / ").ifBlank { "Unknown" },
-                "Country" to subscription.countryIso.uppercase().ifBlank { "Unknown" },
-                "Roaming" to if (subscription.roaming) "Yes" else "No"
-            )
-        )
-    }
-}
-
-@Composable
-private fun ServicesSection(subscription: NetworkSubscription) {
-    val nrNsa = subscription.dataNetwork == "NR-NSA"
-    val rows = buildList {
-        add("Voice network" to subscription.voiceNetwork)
-        add("Data network" to subscription.dataNetwork)
-        val isNrSa = subscription.dataNetwork == "NR-SA" || subscription.dataNetwork == "NR" ||
-            (subscription.voiceNetwork == "NR-SA" && subscription.dataNetwork != "LTE")
-        if (nrNsa) {
-            val lteCells = subscription.cells.filter { it.technology == "LTE" }
-            val lteBandwidths = lteBandwidthsForNsa(subscription.cells, subscription.bandwidthsKhz)
-            add("LTE aggregation" to carrierAggregationLabel(lteCells, lteBandwidths))
-            lteBandwidthLabel(subscription.cells, subscription.bandwidthsKhz)?.let {
-                add("LTE Bandwidth" to it)
-            }
-            add(
-                "NR Bandwidth" to bandwidthLabelForTechnology(
-                    "NR",
-                    subscription.cells,
-                    subscription.bandwidthsKhz
-                )
-            )
-        } else if (isNrSa) {
-            add(
-                "Carrier aggregation" to nrSaCarrierAggregationLabel(
-                    subscription.cells,
-                    subscription.bandwidthsKhz
-                )
-            )
-        } else if (subscription.dataNetwork == "LTE" ||
-            subscription.cells.any { it.role == NetworkCellRole.PRIMARY && it.technology == "LTE" }
-        ) {
-            val lteCells = subscription.cells.filter { it.technology == "LTE" }
-            val lteBandwidths = lteBandwidthsForNsa(subscription.cells, subscription.bandwidthsKhz)
-            add(
-                "Carrier aggregation" to carrierAggregationLabel(
-                    lteCells,
-                    lteBandwidths
-                )
-            )
-            lteBandwidthLabel(
-                subscription.cells,
-                subscription.bandwidthsKhz
-            )?.let { add("LTE Bandwidth" to it) }
-        }
-        add("Data state" to subscription.dataState)
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SectionTitle("Services")
-        DetailsCard(
-            rows = rows,
-            highlightedLabels = setOf("Voice network", "Data network")
-        )
-    }
-}
-
-@Composable
-private fun DetailsCard(
-    rows: List<Pair<String, String>>,
-    highlightedLabels: Set<String> = emptySet(),
-    title: String? = null
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            title?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(bottom = 6.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-                )
-            }
-            rows.forEachIndexed { index, (label, value) ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Text(
-                        "$label:",
-                        modifier = Modifier.weight(0.46f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        value,
-                        modifier = Modifier.weight(0.54f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (label in highlightedLabels) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                }
-                if (index != rows.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 2.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SignalDetailsCard(
-    rows: List<SignalDetailRow>,
-    title: String? = null
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            title?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(bottom = 6.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
-                )
-            }
-            rows.forEachIndexed { index, row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Text(
-                        "${row.label}:",
-                        modifier = Modifier.weight(0.46f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (row.values.any { it.metric != null }) {
-                        Column(
-                            modifier = Modifier.weight(0.54f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            row.values.forEach { value ->
-                                if (value.metric != null) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        SignalMetricBar(
-                                            value = value,
-                                            modifier = Modifier.width(90.dp)
-                                        )
-                                        value.suffix?.let { suffix ->
-                                            Text(
-                                                suffix,
-                                                modifier = Modifier.padding(start = 4.dp),
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontSize = 11.sp
-                                                ),
-                                                color = Color.White
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Text(
-                                        value.text + value.suffix?.let { " $it" }.orEmpty(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            row.values.joinToString("\n") {
-                                it.text + it.suffix?.let { suffix -> " $suffix" }.orEmpty()
-                            },
-                            modifier = Modifier.weight(0.54f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-                if (index != rows.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 2.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-private val CORE_NR_NSA_ROWS = setOf("PCI", "NR-ARFCN", "Frequency", "Bandwidth")
-
+/** Small grey heading that starts at the cards' inner text edge. */
 @Composable
 private fun SectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Normal,
-        modifier = Modifier.padding(top = 4.dp)
+        modifier = Modifier.padding(start = 16.dp, top = 6.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+}
+
+// ---------------------------------------------------------------------------
+// Summary card: mode pill, status chips, the primary cell's bars and fields.
+// ---------------------------------------------------------------------------
+
+/** Value text: pure white on the dark theme (black on the light one, so it stays readable). */
+@Composable
+private fun valueTextColor(): Color = if (isSystemInDarkTheme()) Color.White else Color.Black
+
+private data class Field(val label: String, val value: String)
+
+private data class BarMetric(
+    val label: String,
+    val metric: SignalMetric,
+    val value: Int?,
+    val unit: String
+)
+
+@Composable
+private fun SummaryCard(
+    subscription: NetworkSubscription,
+    primary: NetworkCell?,
+    nrNsa: Boolean
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            // The data network is the pill (primary colour when in service,
+            // grey otherwise), with the voice network and data state as chips
+            // beside it. The pill takes the chips' height so the two line up.
+            val inService = subscription.dataNetwork != "Unknown"
+            Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (inService) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        subscription.dataNetwork,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (inService) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Chip("Voice: ${subscription.voiceNetwork}")
+                    Chip("Data: ${subscription.dataState}", highlight = subscription.dataState == "Connected")
+                    Chip("Roaming: ${if (subscription.roaming) "Yes" else "No"}", highlight = subscription.roaming)
+                }
+            }
+
+            // Operator, MCC / MNC and country: the top row of fields.
+            val operatorRow = listOf(
+                Field("Operator", subscription.operatorName.ifBlank { "Unknown" }),
+                Field(
+                    "MCC / MNC",
+                    listOfNotNull(subscription.mcc, subscription.mnc)
+                        .joinToString(" / ").ifBlank { "Unknown" }
+                ),
+                Field("Country", subscription.countryIso.uppercase().ifBlank { "Unknown" })
+            )
+            // Primary cell: its bars, then its fields.
+            val metrics = primary?.let { cellMetrics(it, nrNsa) }.orEmpty()
+            if (metrics.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                metrics.forEach { SignalBar(it, Modifier.padding(vertical = 3.dp)) }
+            }
+            Spacer(Modifier.height(12.dp))
+            FieldGrid(primary?.let(::cellFields).orEmpty(), extraRow = operatorRow)
+        }
+    }
 }
 
 @Composable
-private fun CellCard(
-    cell: NetworkCell,
-    title: String,
-    showNrNsaMetrics: Boolean
-) {
-    SignalDetailsCard(
-        rows = cellRows(cell, showNrNsaMetrics),
-        title = title
+private fun SignalBar(metric: BarMetric, modifier: Modifier = Modifier) =
+    SignalBar(
+        label = metric.label,
+        value = metric.value,
+        metric = metric.metric,
+        unit = metric.unit,
+        modifier = modifier
     )
-}
 
-private fun cellRows(
-    cell: NetworkCell,
-    showNrNsaMetrics: Boolean
-): List<SignalDetailRow> = buildList {
-    when (cell.technology) {
-        "LTE" -> addLteRows(cell)
-        "NR" -> addNrRows(cell, showNrNsaMetrics)
-        else -> addLegacyRows(cell)
+@Composable
+private fun Chip(text: String, highlight: Boolean = false) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+            )
+            .padding(horizontal = 10.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+            color = if (highlight) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
-private fun secondaryCellRows(
-    cells: List<NetworkCell>,
-    includeCellLabels: Boolean = true,
-    showNrNsaMetrics: Boolean = false,
-    onlyCoreNrNsaRows: Boolean = false
-): List<SignalDetailRow> {
-    val rowsByCell = cells.map { cell ->
-        val rows = cellRows(cell, showNrNsaMetrics)
-        if (onlyCoreNrNsaRows && cell.technology == "NR") {
-            rows.filter { it.label in CORE_NR_NSA_ROWS }
-        } else {
-            rows
+@Composable
+private fun CellSection(title: String, cell: NetworkCell, showNrNsaMetrics: Boolean) {
+    SectionTitle(title)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            val metrics = cellMetrics(cell, showNrNsaMetrics)
+            metrics.forEach { SignalBar(it, Modifier.padding(vertical = 3.dp)) }
+            if (metrics.isNotEmpty()) Spacer(Modifier.height(12.dp))
+            FieldGrid(cellFields(cell))
         }
     }
-    val labels = rowsByCell.flatMap { rows -> rows.map { it.label } }.distinct()
+}
 
-    return labels.mapNotNull { label ->
-        val values = rowsByCell.mapIndexedNotNull { index, rows ->
-            rows.firstOrNull { it.label == label }?.values?.map { value ->
-                if (includeCellLabels) {
-                    value.copy(suffix = "(S${index + 1})")
-                } else {
-                    value
+/**
+ * Compact three-column label/value grid. A field spans 1, 2 or 3 columns by
+ * value length (ECI, DL/UL and the like need more), packed in order. An
+ * [extraRow] is packed on its own and goes before the cell's fields.
+ */
+@Composable
+private fun FieldGrid(fields: List<Field>, extraRow: List<Field> = emptyList()) {
+    BoxWithConstraints {
+        fun span(f: Field) = when {
+            f.value.length <= 11 -> 1
+            f.value.length <= 24 -> 2
+            else -> 3
+        }
+
+        fun pack(list: List<Field>) = buildList<List<Field>> {
+            var row = mutableListOf<Field>()
+            var used = 0
+            for (f in list) {
+                if (used + span(f) > 3) {
+                    add(row)
+                    row = mutableListOf()
+                    used = 0
+                }
+                row += f
+                used += span(f)
+            }
+            if (row.isNotEmpty()) add(row)
+        }
+
+        val rows = pack(extraRow) + pack(fields)
+        // The third column is narrower, which moves the second and third
+        // columns right so the right side looks less empty.
+        val columns = listOf(1.08f, 1.08f, 0.84f)
+        val totalWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
+        val measurer = rememberTextMeasurer()
+        val labelStyle = MaterialTheme.typography.labelSmall.let { it.copy(fontSize = it.fontSize * 0.92f) }
+        val baseValue = MaterialTheme.typography.bodyMedium.let { it.copy(fontSize = it.fontSize * 0.92f) }
+        Column {
+            rows.forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    var col = 0
+                    row.forEach { f ->
+                        val weight = columns.subList(col, col + span(f)).sum()
+                        col += span(f)
+                        val colWidthPx = totalWidthPx * (weight / 3f)
+                        val textWidth = remember(f.value, baseValue) {
+                            measurer.measure(f.value, baseValue).size.width
+                        }
+                        val fit = if (textWidth > 0 && colWidthPx > 0f) (colWidthPx - 1f) / textWidth else 1f
+                        val valueStyle =
+                            if (fit >= 1f) baseValue else baseValue.copy(fontSize = baseValue.fontSize * fit)
+                        Column(Modifier.weight(weight)) {
+                            Text(
+                                f.label,
+                                style = labelStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            // The Band value takes its band's display colour, as in the tables.
+                            val tint = if (f.label == "Band") bandColor(f.value) else null
+                            Text(
+                                f.value,
+                                style = valueStyle,
+                                color = tint ?: valueTextColor(),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                    val free = columns.drop(col).sum()
+                    if (free > 0f) Spacer(Modifier.weight(free))
                 }
             }
         }
-        values.takeIf { it.isNotEmpty() }?.flatten()?.let { SignalDetailRow(label, it) }
     }
 }
 
-private fun MutableList<SignalDetailRow>.addPlain(label: String, value: String) {
-    add(SignalDetailRow(label, listOf(SignalDetailValue(value))))
-}
+// ---------------------------------------------------------------------------
+// Carrier tables: one column per carrier, one row per parameter.
+// ---------------------------------------------------------------------------
 
-private fun MutableList<SignalDetailRow>.addSignal(
-    label: String,
-    value: Int?,
-    metric: SignalMetric,
-    unit: String
-) {
-    add(
-        SignalDetailRow(
-            label,
-            listOf(
-                SignalDetailValue(
-                    text = value?.let { "$it $unit" } ?: "\u2014",
-                    metric = metric,
-                    rawValue = value
-                )
-            )
-        )
-    )
-}
+private data class CarrierColumn(val role: String, val cell: NetworkCell)
 
-private fun MutableList<SignalDetailRow>.addLteRows(cell: NetworkCell) {
-    cell.physicalId?.let { addPlain("PCI", it.toString()) }
-    cell.cellId?.let { ci ->
-        addPlain("ECI", "$ci\n(eNB ${ci shr 8}, cell ${ci and 0xff})")
+private data class CarrierGroup(
+    val title: String,
+    val columns: List<CarrierColumn>,
+    val nr: Boolean,
+    /** NR NSA: Telephony reports only the core identity rows for these cells. */
+    val coreOnly: Boolean,
+    val showNrNsaMetrics: Boolean
+)
+
+/**
+ * The LTE and NR tables of a subscription: the primary cell first (P), then
+ * its secondary cells (S1, S2, ...).
+ */
+private fun carrierGroups(subscription: NetworkSubscription, nrNsa: Boolean): List<CarrierGroup> {
+    fun columnsOf(technology: String): List<CarrierColumn> {
+        val ofTechnology = subscription.cells.filter { it.technology == technology }
+        val primaries = ofTechnology.filter { it.role == NetworkCellRole.PRIMARY }
+        val secondaries = ofTechnology.filter { it.role == NetworkCellRole.SECONDARY }
+        return primaries.map { CarrierColumn("P", it) } +
+            secondaries.mapIndexed { index, cell -> CarrierColumn("S${index + 1}", cell) }
     }
-    cell.channel?.let { addPlain("EARFCN", it.toString()) }
-    cell.band?.let { addPlain("Band", "B$it") }
-    cell.channel?.let { earfcn ->
-        lteFrequenciesForEarfcn(earfcn)?.let { frequencies ->
-            val downlink = formatDecimal(frequencies.downlinkMhz)
-            val uplink = frequencies.uplinkMhz?.let(::formatDecimal) ?: "—"
-            addPlain("Downlink/Uplink", "$downlink / $uplink MHz")
+
+    return buildList {
+        val lte = columnsOf("LTE")
+        if (lte.isNotEmpty()) {
+            add(CarrierGroup("Carrier aggregation", lte, nr = false, coreOnly = false, showNrNsaMetrics = nrNsa))
+        }
+        val nr = columnsOf("NR")
+        if (nr.isNotEmpty()) {
+            add(CarrierGroup("NR aggregation", nr, nr = true, coreOnly = nrNsa, showNrNsaMetrics = nrNsa))
         }
     }
-    cell.bandwidthKhz?.let { addPlain("Bandwidth", formatBandwidth(it)) }
-    addSignal("RSRP", cell.rsrp, SignalMetric.RSRP, "dBm")
-    addSignal("RSRQ", cell.rsrq, SignalMetric.RSRQ, "dB")
-    addSignal("SINR", cell.sinr, SignalMetric.SINR, "dB")
-    cell.rssi?.let { addPlain("RSSI", "$it dBm") }
-    cell.cqi?.let { addPlain("CQI", it.toString()) }
-    if (cell.role == NetworkCellRole.PRIMARY) {
-        cell.timingAdvance?.let { timingAdvance ->
-            addPlain("Timing advance", timingAdvance.toString())
-            lteTimingAdvanceMeters(timingAdvance)?.let { distance ->
-                addPlain(
-                    "Estimated distance",
-                    "${formatDecimal(distance)} m / ${formatDecimal(distance * 3.28084)} ft"
+}
+
+@Composable
+private fun CarrierSection(group: CarrierGroup) {
+    SectionTitle(group.title)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            CarrierTable(group)
+        }
+    }
+}
+
+private val TABLE_LABEL_WIDTH = 64.dp
+
+/** One column per carrier, one row per parameter. */
+@Composable
+private fun CarrierTable(group: CarrierGroup) {
+    val columns = group.columns
+    BoxWithConstraints {
+        // Up to four carriers each column is fixed at the width four columns
+        // share, and the columns sit from the left, so a lone PCell isn't
+        // centred in empty space. From five carriers the columns share the
+        // width, which shrinks them further.
+        val colWidth = (maxWidth - TABLE_LABEL_WIDTH) / 4
+        val fixedCols = columns.size <= 4
+        val barMax = colWidth - 6.dp
+        val cellStyle = fittedCellStyle(
+            columns,
+            if (fixedCols) colWidth else (maxWidth - TABLE_LABEL_WIDTH) / columns.size
+        )
+        val grey = MaterialTheme.colorScheme.onSurfaceVariant
+        val fg = valueTextColor()
+        val line = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+
+        @Composable
+        fun row(label: String, header: Boolean = false, cell: @Composable (CarrierColumn) -> Unit) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .drawBehind {
+                        drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 1f)
+                    }
+                    .padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    label,
+                    modifier = Modifier.width(TABLE_LABEL_WIDTH),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = grey,
+                    fontWeight = if (header) FontWeight.Medium else null
                 )
+                columns.forEach { column ->
+                    Box(
+                        (if (fixedCols) Modifier.width(colWidth) else Modifier.weight(1f))
+                            .padding(horizontal = 3.dp),
+                        Alignment.Center
+                    ) { cell(column) }
+                }
+            }
+        }
+
+        @Composable
+        fun text(value: String?, bold: Boolean = false, color: Color = fg) =
+            Text(
+                value ?: "–",
+                style = cellStyle,
+                fontWeight = if (bold) FontWeight.SemiBold else null,
+                color = if (value == null) grey else color,
+                maxLines = 1,
+                softWrap = false
+            )
+
+        @Composable
+        fun bar(value: Int?, metric: SignalMetric) = CellValueBar(value, metric, barMax, cellStyle)
+
+        fun anyHas(value: (NetworkCell) -> Any?) = columns.any { value(it.cell) != null }
+
+        Column {
+            // The primary cell's role is blue; the secondaries stay grey.
+            row("", header = true) {
+                text(it.role, color = if (it.role == "P") MaterialTheme.colorScheme.primary else grey)
+            }
+            if (group.nr) {
+                if (!group.coreOnly) {
+                    row("Band") {
+                        val band = it.cell.band?.let { b -> "n$b" }
+                        text(band, bold = true, color = bandColor(band) ?: fg)
+                    }
+                }
+                row("BW") { text(it.cell.bandwidthKhz?.let { bw -> formatDecimal(bw / 1000.0) }) }
+                row("NARFCN") { text(it.cell.channel?.toString()) }
+                if (anyHas { c -> c.channel?.let(::nrFrequencyForArfcn) }) {
+                    row("Freq") {
+                        text(it.cell.channel?.let(::nrFrequencyForArfcn)?.let(::formatDecimal))
+                    }
+                }
+                row("PCI") { text(it.cell.physicalId?.toString()) }
+                if (!group.coreOnly) {
+                    row("SS-RSRP") { bar(it.cell.rsrp, SignalMetric.RSRP) }
+                    row("SS-RSRQ") { bar(it.cell.rsrq, SignalMetric.RSRQ) }
+                    if (group.showNrNsaMetrics) row("SS-SINR") { bar(it.cell.sinr, SignalMetric.SINR) }
+                }
+            } else {
+                row("Band") {
+                    val band = it.cell.band?.let { b -> "B$b" }
+                    text(band, bold = true, color = bandColor(band) ?: fg)
+                }
+                row("BW") { text(it.cell.bandwidthKhz?.let { bw -> formatDecimal(bw / 1000.0) }) }
+                row("EARFCN") { text(it.cell.channel?.toString()) }
+                if (anyHas { c -> c.channel?.let(::lteFrequenciesForEarfcn) }) {
+                    row("DL MHz") {
+                        text(
+                            it.cell.channel?.let(::lteFrequenciesForEarfcn)
+                                ?.let { f -> formatDecimal(f.downlinkMhz) }
+                        )
+                    }
+                    row("UL MHz") {
+                        text(
+                            it.cell.channel?.let(::lteFrequenciesForEarfcn)
+                                ?.uplinkMhz?.let(::formatDecimal)
+                        )
+                    }
+                }
+                row("PCI") { text(it.cell.physicalId?.toString()) }
+                row("RSRP") { bar(it.cell.rsrp, SignalMetric.RSRP) }
+                row("RSRQ") { bar(it.cell.rsrq, SignalMetric.RSRQ) }
+                row("SINR") { bar(it.cell.sinr, SignalMetric.SINR) }
+                if (anyHas { c -> c.rssi }) row("RSSI") { text(it.cell.rssi?.toString()) }
+                if (anyHas { c -> c.cqi }) row("CQI") { text(it.cell.cqi?.toString()) }
             }
         }
     }
 }
 
-private fun MutableList<SignalDetailRow>.addNrRows(
-    cell: NetworkCell,
-    showNrNsaMetrics: Boolean
-) {
-    cell.physicalId?.let { addPlain("PCI", it.toString()) }
-    if (cell.role == NetworkCellRole.PRIMARY) {
-        cell.cellId?.let { addPlain("NCI", it.toString()) }
+/**
+ * The table's cell text style: bodyMedium with equal-width digits, scaled
+ * down when a column (minus its padding) is narrower than the widest value
+ * would be at the normal size, instead of wrapping onto two lines. The widest
+ * candidates are a signal value and a channel or cell ID of the longest
+ * length, bold; they are measured as templates so the size doesn't change
+ * with the digits shown.
+ */
+@Composable
+private fun fittedCellStyle(columns: List<CarrierColumn>, columnWidth: Dp): TextStyle {
+    val base = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
+    val measurer = rememberTextMeasurer()
+    val available = with(LocalDensity.current) { (columnWidth - 8.dp).toPx() }
+    val digits = maxOf(
+        6,
+        columns.maxOfOrNull { column ->
+            maxOf(
+                column.cell.channel?.toString()?.length ?: 0,
+                column.cell.cellId?.toString()?.length ?: 0
+            )
+        } ?: 0
+    )
+    val widest = remember(digits, base) {
+        val bold = base.copy(fontWeight = FontWeight.SemiBold)
+        listOf("-140", "8".repeat(digits)).maxOf { measurer.measure(it, bold).size.width }
     }
-    cell.channel?.let { arfcn ->
-        addPlain("NR-ARFCN", arfcn.toString())
-        nrFrequencyForArfcn(arfcn)?.let { addPlain("Frequency", "${formatDecimal(it)} MHz") }
+    val fit = if (widest > 0) available / widest else 1f
+    return if (fit >= 1f) base else base.copy(fontSize = base.fontSize * fit)
+}
+
+// ---------------------------------------------------------------------------
+// Cell content: the bars and fields of one cell.
+// ---------------------------------------------------------------------------
+
+private fun cellMetrics(cell: NetworkCell, showNrNsaMetrics: Boolean): List<BarMetric> =
+    when (cell.technology) {
+        "LTE" -> listOf(
+            BarMetric("RSRP", SignalMetric.RSRP, cell.rsrp, "dBm"),
+            BarMetric("RSRQ", SignalMetric.RSRQ, cell.rsrq, "dB"),
+            BarMetric("SINR", SignalMetric.SINR, cell.sinr, "dB")
+        )
+        "NR" -> buildList {
+            add(BarMetric("SS-RSRP", SignalMetric.RSRP, cell.rsrp, "dBm"))
+            add(BarMetric("SS-RSRQ", SignalMetric.RSRQ, cell.rsrq, "dB"))
+            if (showNrNsaMetrics) add(BarMetric("SS-SINR", SignalMetric.SINR, cell.sinr, "dB"))
+        }
+        else -> emptyList()
     }
-    val bandwidthText = cell.bandwidthKhz?.let(::formatBandwidth)
-    if (cell.role == NetworkCellRole.SECONDARY) {
-        bandwidthText?.let { addPlain("Bandwidth", it) }
-        cell.band?.let { addPlain("Band", "n$it") }
-    } else {
-        cell.band?.let { addPlain("Band", "n$it") }
-        bandwidthText?.let { addPlain("Bandwidth", it) }
-    }
-    addSignal("SS-RSRP", cell.rsrp, SignalMetric.RSRP, "dBm")
-    addSignal("SS-RSRQ", cell.rsrq, SignalMetric.RSRQ, "dB")
-    if (showNrNsaMetrics) {
-        addSignal("SS-SINR", cell.sinr, SignalMetric.SINR, "dB")
-    }
-    if (cell.role == NetworkCellRole.PRIMARY) {
-        cell.timingAdvance?.let { addPlain("Timing advance", "$it \u00b5s") }
+
+private fun cellFields(cell: NetworkCell): List<Field> = buildList {
+    when (cell.technology) {
+        "LTE" -> addLteFields(cell)
+        "NR" -> addNrFields(cell)
+        else -> addLegacyFields(cell)
     }
 }
 
-private fun MutableList<SignalDetailRow>.addLegacyRows(cell: NetworkCell) {
+private fun MutableList<Field>.addLteFields(cell: NetworkCell) {
+    cell.physicalId?.let { add(Field("PCI", it.toString())) }
+    cell.cellId?.let { ci -> add(Field("eNB / Cell", "${ci shr 8}/${ci and 0xff}")) }
+    cell.channel?.let { add(Field("EARFCN", it.toString())) }
+    cell.band?.let { add(Field("Band", "B$it")) }
+    cell.bandwidthKhz?.let { add(Field("Bandwidth", formatBandwidth(it))) }
+    cell.rssi?.let { add(Field("RSSI", "$it dBm")) }
+    if (cell.role == NetworkCellRole.PRIMARY) {
+        cell.timingAdvance?.let { add(Field("Timing advance", it.toString())) }
+    }
+}
+
+private fun MutableList<Field>.addNrFields(cell: NetworkCell) {
+    cell.physicalId?.let { add(Field("PCI", it.toString())) }
+    if (cell.role == NetworkCellRole.PRIMARY) {
+        cell.cellId?.let { add(Field("NCI", it.toString())) }
+    }
+    cell.channel?.let { arfcn ->
+        add(Field("NR-ARFCN", arfcn.toString()))
+        nrFrequencyForArfcn(arfcn)?.let { add(Field("Frequency", "${formatDecimal(it)} MHz")) }
+    }
+    val bandwidth = cell.bandwidthKhz?.let { Field("Bandwidth", formatBandwidth(it)) }
+    val band = cell.band?.let { Field("Band", "n$it") }
+    if (cell.role == NetworkCellRole.SECONDARY) {
+        bandwidth?.let(::add)
+        band?.let(::add)
+    } else {
+        band?.let(::add)
+        bandwidth?.let(::add)
+    }
+}
+
+private fun MutableList<Field>.addLegacyFields(cell: NetworkCell) {
     cell.physicalId?.let {
         val label = when (cell.technology) {
             "WCDMA" -> "PSC"
@@ -726,26 +814,26 @@ private fun MutableList<SignalDetailRow>.addLegacyRows(cell: NetworkCell) {
             "TD-SCDMA" -> "CPID"
             else -> "Physical ID"
         }
-        addPlain(label, it.toString())
+        add(Field(label, it.toString()))
     }
-    cell.cellId?.let { addPlain("Cell ID", it.toString()) }
+    cell.cellId?.let { add(Field("Cell ID", it.toString())) }
     cell.channel?.let {
         val label = when (cell.technology) {
             "WCDMA", "TD-SCDMA" -> "UARFCN"
             "GSM" -> "ARFCN"
             else -> "Channel"
         }
-        addPlain(label, it.toString())
+        add(Field(label, it.toString()))
     }
     when (cell.technology) {
         "WCDMA" -> {
-            cell.rsrp?.let { addPlain("RSCP", "$it dBm") }
-            cell.sinr?.let { addPlain("Ec/No", "$it dB") }
+            cell.rsrp?.let { add(Field("RSCP", "$it dBm")) }
+            cell.sinr?.let { add(Field("Ec/No", "$it dB")) }
         }
-        "TD-SCDMA" -> cell.rsrp?.let { addPlain("RSCP", "$it dBm") }
+        "TD-SCDMA" -> cell.rsrp?.let { add(Field("RSCP", "$it dBm")) }
         "GSM" -> {
-            cell.rssi?.let { addPlain("RSSI", "$it dBm") }
-            cell.timingAdvance?.let { addPlain("Timing advance", it.toString()) }
+            cell.rssi?.let { add(Field("RSSI", "$it dBm")) }
+            cell.timingAdvance?.let { add(Field("Timing advance", it.toString())) }
         }
     }
 }
