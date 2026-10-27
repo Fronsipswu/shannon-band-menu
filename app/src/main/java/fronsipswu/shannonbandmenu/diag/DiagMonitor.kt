@@ -4,15 +4,14 @@ import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import fronsipswu.shannonbandmenu.AppLog
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Monitoring follows page/activity visibility; freeze affects presentation only. */
@@ -30,7 +29,7 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
     private val mutableState = MutableStateFlow(State(enabled = preferences.getBoolean("enabled", false)))
     val state = mutableState.asStateFlow()
     private var active = false
-    private var loop: Job? = null
+    private val sessions = DiagSessionRunner(viewModelScope)
 
     fun setEnabled(enabled: Boolean) {
         preferences.edit().putBoolean("enabled", enabled).apply()
@@ -45,13 +44,10 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
     }
 
     private fun reschedule() {
-        val previous = loop
-        previous?.cancel()
-        loop = viewModelScope.launch {
-            previous?.join()
+        sessions.replace {
             if (!active || !mutableState.value.enabled) {
                 mutableState.update { it.copy(reading = null, starting = false) }
-                return@launch
+                return@replace
             }
             val client = DiagClient(getApplication())
             var lastWindow: Long? = null
@@ -72,7 +68,7 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
                         val history = if (lastIdentity != null && identity != lastIdentity) emptyList()
                             else old.points
                         old.copy(
-                            starting = snapshot == null,
+                            starting = false,
                             reading = reading,
                             error = null,
                             sampledAtMillis = now,
@@ -85,6 +81,7 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
                 }
             } catch (error: Exception) {
                 if (isActive) {
+                    AppLog.e("SBMDiag", "DIAG session failed", error)
                     preferences.edit().putBoolean("enabled", false).apply()
                     mutableState.update {
                         it.copy(enabled = false, starting = false, reading = null,

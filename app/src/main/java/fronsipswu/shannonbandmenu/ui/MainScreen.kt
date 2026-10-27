@@ -170,8 +170,9 @@ fun MainScreen(
             ) { page ->
                 if (page == 0) {
                     NetworkInfoScreen(
-                        isActive = pagerState.settledPage == 0 &&
-                            !pagerState.isScrollInProgress,
+                        // A gesture can mark the pager scrolling even when the
+                        // Network tab stays selected. Keep its DIAG session alive.
+                        isActive = pagerState.settledPage == 0,
                         contentPadding = contentPadding
                     )
                 } else if (page == 1) {

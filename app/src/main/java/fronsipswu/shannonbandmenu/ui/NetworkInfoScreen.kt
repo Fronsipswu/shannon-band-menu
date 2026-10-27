@@ -295,8 +295,7 @@ fun NetworkInfoScreen(
                                     when {
                                         diagState.starting -> "DIAG · Connecting"
                                         diagOwner == null -> "DIAG · Waiting for serving cell"
-                                        displayedDiag?.shared == true -> "DIAG · Shared broker"
-                                        displayedDiag?.transport == "broker" -> "DIAG · Broker"
+                                        displayedDiag?.transport == "broker" -> "DIAG (relay)"
                                         else -> "DIAG · Direct"
                                     }
                                 } else null
@@ -485,19 +484,16 @@ private fun SummaryCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Box {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                // The data network is the pill (primary colour when in service,
-                // grey otherwise), with the voice network and data state as chips
-                // beside it. The pill takes the chips' height so the two line up.
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 val inService = subscription.dataNetwork != "Unknown"
                 Row(
                     Modifier.fillMaxWidth().padding(end = if (frozen != null) 128.dp else 0.dp)
-                        .height(IntrinsicSize.Min),
+                        .height(48.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         Modifier
-                            .fillMaxHeight()
+                            .height(44.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(
                                 if (inService) MaterialTheme.colorScheme.primary
@@ -517,18 +513,16 @@ private fun SummaryCard(
                     Spacer(Modifier.width(10.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Chip("Voice: ${subscription.voiceNetwork}")
-                        Chip("Data: ${subscription.dataState}", highlight = subscription.dataState == "Connected")
-                        Chip("Roaming: ${if (subscription.roaming) "Yes" else "No"}", highlight = subscription.roaming)
+                        Chip(subscription.dataState, highlight = subscription.dataState == "Connected")
+                    }
+                    diagStatus?.let {
+                        Spacer(Modifier.width(6.dp))
+                        Text(it, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     }
                 }
-
                 if (frozen != null) TrafficTestStatus(testRun)
-                diagStatus?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // Operator, MCC / MNC and country: the top row of fields.
+                // Operator, MCC / MNC and roaming: the top row of fields.
                 val operatorRow = listOf(
                     Field("Operator", subscription.operatorName.ifBlank { "Unknown" }),
                     Field(
@@ -536,7 +530,7 @@ private fun SummaryCard(
                         listOfNotNull(subscription.mcc, subscription.mnc)
                             .joinToString(" / ").ifBlank { "Unknown" }
                     ),
-                    Field("Country", subscription.countryIso.uppercase().ifBlank { "Unknown" })
+                    Field("Roaming", if (subscription.roaming) "Yes" else "No")
                 )
                 // Primary cell: its bars, then its fields.
                 val metrics = primary?.let { cellMetrics(it, nrNsa) }.orEmpty()
@@ -544,11 +538,11 @@ private fun SummaryCard(
                     Spacer(Modifier.height(6.dp))
                     metrics.forEach { SignalBar(it, Modifier.padding(vertical = 3.dp)) }
                 }
-                Spacer(Modifier.height(12.dp))
-                FieldGrid(primary?.let(::cellFields).orEmpty(), extraRow = operatorRow)
+                Spacer(Modifier.height(8.dp))
+                FieldGrid(primary?.let(::cellFields).orEmpty(), extraRow = operatorRow, compact = true)
             }
             if (frozen != null) {
-                Row(Modifier.align(Alignment.TopEnd)) {
+                Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp)) {
                     TrafficTestButton(testRun, onTestToggle)
                     IconButton(onClick = onFrozenToggle) {
                         Icon(
@@ -641,7 +635,7 @@ private fun CellSection(title: String, cell: NetworkCell, showNrNsaMetrics: Bool
  * [extraRow] is packed on its own and goes before the cell's fields.
  */
 @Composable
-private fun FieldGrid(fields: List<Field>, extraRow: List<Field> = emptyList()) {
+private fun FieldGrid(fields: List<Field>, extraRow: List<Field> = emptyList(), compact: Boolean = false) {
     BoxWithConstraints {
         fun span(f: Field) = when {
             f.value.length <= 11 -> 1
@@ -670,8 +664,14 @@ private fun FieldGrid(fields: List<Field>, extraRow: List<Field> = emptyList()) 
         val columns = listOf(1.08f, 1.08f, 0.84f)
         val totalWidthPx = with(LocalDensity.current) { maxWidth.toPx() }
         val measurer = rememberTextMeasurer()
-        val labelStyle = MaterialTheme.typography.labelSmall.let { it.copy(fontSize = it.fontSize * 0.92f) }
-        val baseValue = MaterialTheme.typography.bodyMedium.let { it.copy(fontSize = it.fontSize * 0.92f) }
+        val labelStyle = MaterialTheme.typography.labelSmall.let {
+            if (compact) it.copy(fontSize = 10.sp, lineHeight = 14.sp)
+            else it.copy(fontSize = it.fontSize * 0.92f)
+        }
+        val baseValue = MaterialTheme.typography.bodyMedium.let {
+            if (compact) it.copy(fontSize = 12.sp, lineHeight = 16.sp)
+            else it.copy(fontSize = it.fontSize * 0.92f)
+        }
         Column {
             rows.forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {

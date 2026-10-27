@@ -16,7 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.3.0"
+#define VERSION "0.3.1"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {
@@ -470,9 +470,10 @@ int main(int argc, char **argv) {
             ssize_t n = read(fd, buf, sizeof(buf));
             if (n > 0)
                 feed(&state, &framer, buf, (size_t)n, monotonic_us());
-            else if (!n)
+            else if (!n) {
+                fprintf(stderr, "DM input closed (%s).\n", mode);
                 break;
-            else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+            } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("read");
                 result = 1;
                 break;
@@ -484,6 +485,8 @@ int main(int argc, char **argv) {
             break;
         }
     }
+    if (stopping)
+        fprintf(stderr, "DIAG stopping (app Stop or termination signal).\n");
     if (init)
         stop_stream(fd);
     fprintf(stderr,

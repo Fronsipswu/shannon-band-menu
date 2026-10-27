@@ -1,6 +1,6 @@
 # SBM DIAG helper
 
-`sbm-diagd` 0.3.0 is a separate root process from the band-lock daemon and the Android app. It frames Shannon DM packets, decodes the capture-validated LTE/NR layouts, aggregates completed one-second windows, and serves structured metrics to the app. It contains no band-lock, NV or service-menu operations.
+`sbm-diagd` 0.3.1 is a separate root process from the band-lock daemon and the Android app. It frames Shannon DM packets, decodes the capture-validated LTE/NR layouts, aggregates completed one-second windows, and serves structured metrics to the app. It contains no band-lock, NV or service-menu operations.
 
 ## Build
 
@@ -22,6 +22,10 @@ The app extracts a versioned executable into its files directory, launches it th
 ```
 
 Replies are one JSON object per line. Stats contain `ok`, `version`, `transport`, the broker's initial Open decision as `session`, sample `age_ms`, and a schema-1 `snapshot` or null. The nested snapshot has no embedded line terminator. Missing/old measurements remain null. This endpoint accepts no arbitrary modem commands. Fifteen seconds without a valid stats request causes helper exit and lease release. Stop or normal termination does the same; app lifecycle stops polling and releases the helper when the page/activity leaves the foreground. Display freeze keeps health polling alive while holding the displayed reading.
+
+App session replacements hold a mutex through connection cleanup, so rapid pause/resume transitions cannot connect a second client before the previous one releases the helper. Version 0.3.1 also records app Stop requests, rejected overlapping connections and input closure in the helper's diagnostic stderr file.
+
+The Network tab remains active throughout scroll gestures. Monitoring changes with the settled tab and activity lifecycle, rather than the pager's transient scrolling flag. A successful stats response establishes the connection even if the first completed measurement window is not available yet.
 
 ## Transports
 

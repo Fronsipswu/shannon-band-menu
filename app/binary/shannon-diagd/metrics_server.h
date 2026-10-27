@@ -91,6 +91,7 @@ static void metrics_request(MetricsServer *server, const char *request) {
         size = snprintf(server->output, sizeof(server->output),
                         "{\"ok\":false,\"error\":\"unknown_command\"}\n");
     } else if (stop) {
+        fprintf(stderr, "App requested DIAG Stop.\n");
         server->stop_after_reply = 1;
         size = snprintf(server->output, sizeof(server->output), "{\"ok\":true}\n");
     } else {
@@ -118,6 +119,8 @@ static void metrics_process(MetricsServer *server, struct pollfd *fds) {
             socklen_t size = sizeof(peer);
             if (getsockopt(client, SOL_SOCKET, SO_PEERCRED, &peer, &size) ||
                 (peer.uid != server->app_uid && peer.uid != 0) || server->client >= 0) {
+                fprintf(stderr, "Rejected app connection (existing_client=%d).\n",
+                        server->client >= 0);
                 close(client);
             } else {
                 server->client = client;
@@ -128,6 +131,7 @@ static void metrics_process(MetricsServer *server, struct pollfd *fds) {
         return;
     short events = fds[1].revents;
     if (events & (POLLHUP | POLLERR | POLLNVAL)) {
+        fprintf(stderr, "App socket closed (poll_events=0x%x).\n", events);
         metrics_disconnect(server);
         return;
     }

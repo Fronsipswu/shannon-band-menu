@@ -44,7 +44,7 @@ import kotlin.math.roundToInt
 internal fun DiagCarrierCard(title: String, carriers: List<DiagCarrier>, uplink: Boolean = false) {
     DiagTitle(title)
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             DiagTable(carriers, uplink)
         }
     }
@@ -72,13 +72,14 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
     @Composable
     fun text(value: String?, color: Color = foreground, bold: Boolean = false) {
         Text(value ?: "–", color = if (value == null) muted else color, fontSize = textSize,
+            lineHeight = textSize * (4f / 3f),
             fontWeight = if (bold) FontWeight.SemiBold else null, maxLines = 1, softWrap = false)
     }
     @Composable
     fun row(label: String, cell: @Composable (DiagCarrier) -> Unit) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).drawBehind {
             drawLine(line, Offset(0f, size.height), Offset(size.width, size.height), 1f)
-        }.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.width(64.dp), style = MaterialTheme.typography.labelSmall, color = muted)
             carriers.forEach { carrier ->
                 Box(Modifier.width(columnWidth).padding(horizontal = 3.dp), Alignment.Center) { cell(carrier) }
@@ -93,7 +94,7 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
     @Composable
     fun grant(value: Double?, maximum: Double?) {
         DiagValueBar(value, value?.let { v -> maximum?.let { (v / it).toFloat().coerceIn(0f, 1f) } },
-            MaterialTheme.colorScheme.primary, textSize.value, decimals = 0)
+            Color(0xFF2988D8), textSize.value, decimals = 0)
     }
     @Composable
     fun bler(value: Double?) {
@@ -103,7 +104,8 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
             value < 10 -> Color(0xFFEAB01F)
             else -> Color(0xFFE0453A)
         }
-        DiagValueBar(value, value?.let { (it / 100).toFloat().coerceIn(0f, 1f) }, color, textSize.value)
+        DiagValueBar(value, value?.let { (it / 100).toFloat().coerceIn(0f, 1f) }, color,
+            textSize.value, suffix = "%")
     }
     val nr = carriers.all { it.nr }
     Column {
@@ -114,14 +116,13 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
             text(role, if (carrier.primary) MaterialTheme.colorScheme.primary else muted, bold = true)
         }
         row("Band") { text(it.label, bandColor(it.label) ?: foreground, bold = true) }
-        row("BW") { text(number(it.bandwidth)) }
+        row("BW") { text(number(it.bandwidth, 0)) }
         if (uplink) {
             row("RBs") { grant(it.ulRbs, maxResourceBlocks(it)) }
             row("MCS") { grant(it.ulMcs, 31.0) }
             row("Mod") { text(it.ulModulation?.removeSuffix("QAM")) }
             if (nr) {
                 row("Rank") { text(number(it.ulRank, 0)) }
-                row("TX mode") { text(it.ulTxMode) }
             }
             row("PUSCH") { power ->
                 DiagValueBar(power.pusch, power.pusch?.let { ((it + 40) / 70).toFloat().coerceIn(0f, 1f) },
@@ -131,7 +132,7 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
                 DiagValueBar(power.pucch, power.pucch?.let { ((it + 40) / 70).toFloat().coerceIn(0f, 1f) },
                     MaterialTheme.colorScheme.primary, textSize.value)
             }
-            row("BLER%") { bler(it.ulBler) }
+            row("BLER") { bler(it.ulBler) }
             row("PHY UL") { text(number(it.ulMbps), UplinkColor, bold = true) }
         } else {
             row(if (nr) "NARFCN" else "EARFCN") { text(it.arfcn?.toString()) }
@@ -149,13 +150,12 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
                 row("Tx/Rx") {
                     text(if (it.tx == null && it.rx == null) null else "${it.tx ?: "–"}×${it.rx ?: "–"}")
                 }
-                row("TxMode") { text(it.mode?.let { mode -> "TM$mode" }) }
             }
             row("Rank") { text(number(it.rank, 0)) }
             row("CQI") { text(number(it.cqi, 0)) }
             row("RBs") { grant(it.rbs, maxResourceBlocks(it)) }
             row("MCS") { grant(it.mcs, 31.0) }
-            row("BLER%") { bler(it.bler) }
+            row("BLER") { bler(it.bler) }
             row("Mod") { text(it.modulation?.removeSuffix("QAM")) }
             row("PHY DL") { text(number(it.dlMbps), DownlinkColor, bold = true) }
         }
@@ -165,10 +165,11 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
 /** Missing data retains its track; fractional radio readings keep their precision. */
 @Composable
 private fun DiagValueBar(
-    value: Double?, fraction: Float?, color: Color, textSize: Float, decimals: Int = 1
+    value: Double?, fraction: Float?, color: Color, textSize: Float, decimals: Int = 1,
+    suffix: String = ""
 ) {
     val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(track).drawBehind {
+    Box(Modifier.fillMaxWidth(0.88f).clip(RoundedCornerShape(4.dp)).background(track).drawBehind {
         fraction?.let { fill ->
             val width = size.width * fill
             if (width > 0f) drawRect(
@@ -177,7 +178,9 @@ private fun DiagValueBar(
             )
         }
     }.padding(vertical = 1.dp), Alignment.Center) {
-        Text(number(value, decimals) ?: "–", fontSize = textSize.sp, maxLines = 1, softWrap = false,
+        Text(number(value, decimals)?.let { it + suffix } ?: "–",
+            fontSize = textSize.sp, maxLines = 1, softWrap = false,
+            lineHeight = (textSize * (4f / 3f)).sp,
             color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.onSurface)
     }
