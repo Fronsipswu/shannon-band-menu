@@ -1,0 +1,44 @@
+# SBM DIAG helper
+
+`sbm-diagd` 0.3.0 is a separate root process from the band-lock daemon and the Android app. It frames Shannon DM packets, decodes the capture-validated LTE/NR layouts, aggregates completed one-second windows, and serves structured metrics to the app. It contains no band-lock, NV or service-menu operations.
+
+## Build
+
+From the Android project directory, with Android NDK installed:
+
+```powershell
+.\binary\shannon-diagd\build.ps1 -Ndk D:\AndroidSDK\ndk\30.0.16138531
+```
+
+The script updates `src/main/assets/sbm-diagd`. The asset is included in the repository; Gradle does not compile C. Build it whenever the native source changes. Native `VERSION` and Kotlin `DiagClient.VERSION` must match. The binary is static Android ARM64, API 26+, built with warnings as errors, fortification and stack protection.
+
+## App protocol
+
+The app extracts a versioned executable into its files directory, launches it through its granted root shell with `--auto --serve <app UID>`, and requests stats roughly once per second. The abstract socket is `sbm_diagd_<UID>`. Peer credentials must match that UID or root; the app checks that the server is root. Different app/test UIDs have different sockets. Binding happens before transport activation, so a duplicate helper exits without activating the modem.
+
+```json
+{"cmd":"stats"}
+{"cmd":"stop"}
+```
+
+Replies are one JSON object per line. Stats contain `ok`, `version`, `transport`, the broker's initial Open decision as `session`, sample `age_ms`, and a schema-1 `snapshot` or null. The nested snapshot has no embedded line terminator. Missing/old measurements remain null. This endpoint accepts no arbitrary modem commands. Fifteen seconds without a valid stats request causes helper exit and lease release. Stop or normal termination does the same; app lifecycle stops polling and releases the helper when the page/activity leaves the foreground. Display freeze keeps health polling alive while holding the displayed reading.
+
+## Transports
+
+- Active compatible broker: connect its root-only receive tap before logical Open; hold the control connection for the lease lifetime. Closing the helper releases its own lease. The helper sends no raw modem commands in this mode.
+- Broker absent/refused connection: inspect `/dev/umts_dm0` owners, including aliases by device identity. Refuse busy/unknown ownership; otherwise take the helper lock, open, recheck, and send the known LTE activation sequence.
+- A responding incompatible/refusing broker is never bypassed. The helper does not start the module, close other apps, stop Android services, or change USB/build properties or SELinux policy.
+
+Owner inspection is best effort; the helper lock cannot exclude unrelated direct readers. Independent fresh-boot NR activation and full physical logging quiescence after the known Stop request remain unverified. Broker logical Close is not proof that all background modem logging stopped.
+
+## UI and coverage
+
+The Kotlin layer parses finite values, preserves nulls/real zeros, and attributes unlabelled modem data only to a uniquely matching subscription (or the sole subscription). Missing samples retain DIAG tables with identity placeholders; previous RF readings are not held as new measurements. API identity/configuration can fill otherwise unknown columns. Switching off DIAG returns to the original API tables.
+
+The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR ports are omitted from the UI. Some fields, including per-chain SINR and NR UL rank/TX mode, are not emitted by the current decoder and display dashes. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
+
+## Tests
+
+`test_metrics.py --binary <host-helper>` checks stats framing, explicit Stop, app-loss timeout, duplicate-start exclusion and cross-UID rejection (the latter needs root on Linux). Compile `main.c telemetry.c -lm` with ASan/UBSan for these host checks; the tests use synthetic stdin and never open a modem. App tests cover schema handling, SIM attribution, serving identities, missing-sample layout retention, NR RB scales and the ported graph scale/window rules.
+
+For an isolated phone APK, run `gradlew.bat testDebugUnitTest assembleDiagTest`. The package is `fronsipswu.shannonbandmenu.diagtest`, labelled **SBM DIAG Test**. The normal app package is separate.

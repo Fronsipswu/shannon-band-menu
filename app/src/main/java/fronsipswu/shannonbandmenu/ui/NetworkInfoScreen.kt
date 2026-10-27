@@ -1,6 +1,10 @@
 package fronsipswu.shannonbandmenu.ui
 
 import android.Manifest
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -18,9 +22,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,9 +40,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -56,6 +67,14 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import fronsipswu.shannonbandmenu.diag.DiagMonitor
+import fronsipswu.shannonbandmenu.diag.DiagClient
+import fronsipswu.shannonbandmenu.diag.DiagSnapshot
+import fronsipswu.shannonbandmenu.diag.ThputPoint
+import fronsipswu.shannonbandmenu.diag.diagSubscription
+import fronsipswu.shannonbandmenu.diag.diagServingCell
+import fronsipswu.shannonbandmenu.diag.diagDisplayCarriers
+import fronsipswu.shannonbandmenu.diag.diagDisplayOwner
 import fronsipswu.shannonbandmenu.NetworkCell
 import fronsipswu.shannonbandmenu.NetworkCellRole
 import fronsipswu.shannonbandmenu.NetworkInfoSnapshot
@@ -65,6 +84,7 @@ import fronsipswu.shannonbandmenu.R
 import fronsipswu.shannonbandmenu.isNrNsa
 import fronsipswu.shannonbandmenu.lteFrequenciesForEarfcn
 import fronsipswu.shannonbandmenu.nrFrequencyForArfcn
+import fronsipswu.shannonbandmenu.network.TrafficTest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -81,10 +101,50 @@ fun NetworkInfoScreen(
     val context = LocalContext.current
     val source = remember(context) { NetworkInfoSource(context.applicationContext) }
     val scope = rememberCoroutineScope()
+    val trafficTest = remember(context) { TrafficTest.get(context) }
+    val testConfig by trafficTest.config.collectAsState()
+    val testRun by trafficTest.run.collectAsState()
+    var showTestSetup by rememberSaveable { mutableStateOf(false) }
     var permissionRevision by remember { mutableIntStateOf(0) }
     var snapshot by remember { mutableStateOf<NetworkInfoSnapshot?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var monitoringFrozen by rememberSaveable { mutableStateOf(false) }
+    val activity = context as ComponentActivity
+    val diagMonitor = remember(activity) { ViewModelProvider(activity)[DiagMonitor::class.java] }
+    val diagState by diagMonitor.state.collectAsState()
+    var displayedDiag by remember { mutableStateOf<DiagClient.Reading?>(null) }
+    var displayedPoints by remember { mutableStateOf<List<ThputPoint>>(emptyList()) }
+    var displayedAtMillis by remember { mutableStateOf(0L) }
+    var previousDiagOwner by remember { mutableStateOf<Int?>(null) }
+
+    val matchedDiagOwner = displayedDiag?.snapshot?.let { data ->
+        snapshot?.let { diagSubscription(data, it.subscriptions) }
+    }
+    LaunchedEffect(matchedDiagOwner, diagState.enabled) {
+        if (!diagState.enabled) previousDiagOwner = null
+        else if (matchedDiagOwner != null) previousDiagOwner = matchedDiagOwner
+    }
+
+    LaunchedEffect(diagState, monitoringFrozen) {
+        if (!monitoringFrozen || !diagState.enabled) {
+            displayedDiag = diagState.reading
+            displayedPoints = diagState.points
+            displayedAtMillis = diagState.sampledAtMillis
+        }
+    }
+    DisposableEffect(activity, isActive) {
+        fun updateActivity() = diagMonitor.setActive(
+            isActive && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        )
+        val observer = LifecycleEventObserver { _, _ -> updateActivity() }
+        activity.lifecycle.addObserver(observer)
+        updateActivity()
+        onDispose {
+            activity.lifecycle.removeObserver(observer)
+            diagMonitor.setActive(false)
+        }
+    }
+
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -135,26 +195,7 @@ fun NetworkInfoScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-        TopAppBar(
-            title = { Text("Telephony API Info") },
-            actions = {
-                IconButton(onClick = { monitoringFrozen = !monitoringFrozen }) {
-                    Icon(
-                        painter = painterResource(
-                            if (monitoringFrozen) R.drawable.ic_monitoring_locked
-                            else R.drawable.ic_monitoring_unlocked
-                        ),
-                        contentDescription = if (monitoringFrozen) {
-                            "Unfreeze live monitoring"
-                        } else {
-                            "Freeze live monitoring"
-                        }
-                    )
-                }
-            }
-        )
-
+    Column(modifier = Modifier.fillMaxSize().padding(contentPadding).statusBarsPadding()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = ::refresh,
@@ -183,7 +224,15 @@ fun NetworkInfoScreen(
                     }
                 }
 
+                diagState.error?.let { message ->
+                    item(key = "diag-error") { NoticeCard("DIAG stopped: $message", isError = true) }
+                }
                 val current = snapshot
+                val diag = displayedDiag?.snapshot.takeIf { diagState.enabled }
+                val diagOwner = current?.let {
+                    diagDisplayOwner(matchedDiagOwner, previousDiagOwner, it.subscriptions)
+                }
+
                 if (phonePermissionGranted && current == null) {
                     item {
                         Row(
@@ -213,7 +262,14 @@ fun NetworkInfoScreen(
                         val primaryCells = subscription.cells.filter {
                             it.role == NetworkCellRole.PRIMARY
                         }
-                        val nrNsa = isNrNsa(subscription.cells)
+                        // Layout follows the selected mode, never a transient sample's availability.
+                        val usesDiag = diagState.enabled && diagOwner == id
+                        val subscriptionDiag = diag.takeIf { matchedDiagOwner == id }
+                        val diagCarriers = if (usesDiag) diagDisplayCarriers(subscription, subscriptionDiag)
+                            else emptyList()
+                        val nrNsa = subscriptionDiag?.rat?.let { it == "NSA" } ?: isNrNsa(subscription.cells)
+                        val diagPrimaries = primaryCells.map { diagServingCell(it, subscriptionDiag) }
+
 
                         if (current.subscriptions.size > 1) {
                             item(key = "sim-title-$id") {
@@ -223,7 +279,28 @@ fun NetworkInfoScreen(
                         // The summary and the primary cell share one card; any
                         // further primary cell keeps its own card below.
                         item(key = "summary-$id") {
-                            SummaryCard(subscription, primaryCells.firstOrNull(), nrNsa)
+                            SummaryCard(
+                                subscription, diagPrimaries.firstOrNull(), nrNsa,
+                                frozen = monitoringFrozen.takeIf { subscription === current.subscriptions.first() },
+                                onFrozenToggle = { monitoringFrozen = !monitoringFrozen },
+                                diagEnabled = diagState.enabled,
+                                onDiagToggle = { diagMonitor.setEnabled(!diagState.enabled) },
+                                testRun = testRun,
+                                onTestSetup = { showTestSetup = true },
+                                onTestToggle = {
+                                    if (testRun.running) trafficTest.stop()
+                                    else if (!trafficTest.start()) showTestSetup = true
+                                },
+                                diagStatus = if (subscription === current.subscriptions.first() && diagState.enabled) {
+                                    when {
+                                        diagState.starting -> "DIAG · Connecting"
+                                        diagOwner == null -> "DIAG · Waiting for serving cell"
+                                        displayedDiag?.shared == true -> "DIAG · Shared broker"
+                                        displayedDiag?.transport == "broker" -> "DIAG · Broker"
+                                        else -> "DIAG · Direct"
+                                    }
+                                } else null
+                            )
                         }
                         if (primaryCells.isEmpty()) {
                             item(key = "primary-empty-$id") {
@@ -240,9 +317,31 @@ fun NetworkInfoScreen(
                             }
                         }
 
-                        carrierGroups(subscription, nrNsa).forEach { group ->
-                            item(key = "carriers-$id-${group.title}") {
-                                CarrierSection(group)
+                        if (usesDiag) {
+                            val lte = diagCarriers.filter { !it.nr }
+                            val nr = diagCarriers.filter { it.nr }
+                            if (lte.isNotEmpty()) item(key = "diag-lte-$id") {
+                                DiagCarrierCard("Carrier aggregation", lte)
+                            }
+                            if (nr.isNotEmpty()) item(key = "diag-nr-$id") {
+                                DiagCarrierCard("NR aggregation", nr)
+                            }
+                            item(key = "throughput-$id") {
+                                DiagTitle("Throughput")
+                                ThroughputCard(displayedPoints, displayedAtMillis)
+                            }
+                            val uplink = diagCarriers.filter { it.primary || it.hasUplink }
+                            if (uplink.isNotEmpty()) item(key = "uplink-$id") {
+                                DiagCarrierCard("Uplink", uplink, uplink = true)
+                            }
+                            if (diagCarriers.isNotEmpty()) item(key = "antennas-$id") {
+                                DiagAntennaCard(diagCarriers)
+                            }
+                        } else {
+                            carrierGroups(subscription, nrNsa).forEach { group ->
+                                item(key = "carriers-$id-${group.title}") {
+                                    CarrierSection(group, diagEnabled = diagState.enabled)
+                                }
                             }
                         }
                         // Secondary cells of any other technology keep a card each.
@@ -265,6 +364,15 @@ fun NetworkInfoScreen(
             }
         }
     }
+    TestScriptDialog(
+        show = showTestSetup,
+        config = testConfig,
+        onDismiss = { showTestSetup = false },
+        onSave = {
+            trafficTest.save(it)
+            showTestSetup = false
+        }
+    )
 }
 
 @Composable
@@ -364,60 +472,122 @@ private data class BarMetric(
 private fun SummaryCard(
     subscription: NetworkSubscription,
     primary: NetworkCell?,
-    nrNsa: Boolean
+    nrNsa: Boolean,
+    /** The padlock at the card's top right; null leaves it out. */
+    frozen: Boolean? = null,
+    onFrozenToggle: () -> Unit = {},
+    diagEnabled: Boolean = false,
+    onDiagToggle: () -> Unit = {},
+    testRun: TrafficTest.Run = TrafficTest.Run(),
+    onTestSetup: () -> Unit = {},
+    onTestToggle: () -> Unit = {},
+    diagStatus: String? = null
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            // The data network is the pill (primary colour when in service,
-            // grey otherwise), with the voice network and data state as chips
-            // beside it. The pill takes the chips' height so the two line up.
-            val inService = subscription.dataNetwork != "Unknown"
-            Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (inService) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.Center
+        Box {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                // The data network is the pill (primary colour when in service,
+                // grey otherwise), with the voice network and data state as chips
+                // beside it. The pill takes the chips' height so the two line up.
+                val inService = subscription.dataNetwork != "Unknown"
+                Row(
+                    Modifier.fillMaxWidth().padding(end = if (frozen != null) 128.dp else 0.dp)
+                        .height(IntrinsicSize.Min),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        subscription.dataNetwork,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (inService) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurface
-                    )
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (inService) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            subscription.dataNetwork,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (inService) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Chip("Voice: ${subscription.voiceNetwork}")
+                        Chip("Data: ${subscription.dataState}", highlight = subscription.dataState == "Connected")
+                        Chip("Roaming: ${if (subscription.roaming) "Yes" else "No"}", highlight = subscription.roaming)
+                    }
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Chip("Voice: ${subscription.voiceNetwork}")
-                    Chip("Data: ${subscription.dataState}", highlight = subscription.dataState == "Connected")
-                    Chip("Roaming: ${if (subscription.roaming) "Yes" else "No"}", highlight = subscription.roaming)
-                }
-            }
 
-            // Operator, MCC / MNC and country: the top row of fields.
-            val operatorRow = listOf(
-                Field("Operator", subscription.operatorName.ifBlank { "Unknown" }),
-                Field(
-                    "MCC / MNC",
-                    listOfNotNull(subscription.mcc, subscription.mnc)
-                        .joinToString(" / ").ifBlank { "Unknown" }
-                ),
-                Field("Country", subscription.countryIso.uppercase().ifBlank { "Unknown" })
-            )
-            // Primary cell: its bars, then its fields.
-            val metrics = primary?.let { cellMetrics(it, nrNsa) }.orEmpty()
-            if (metrics.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                metrics.forEach { SignalBar(it, Modifier.padding(vertical = 3.dp)) }
+                if (frozen != null) TrafficTestStatus(testRun)
+                diagStatus?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // Operator, MCC / MNC and country: the top row of fields.
+                val operatorRow = listOf(
+                    Field("Operator", subscription.operatorName.ifBlank { "Unknown" }),
+                    Field(
+                        "MCC / MNC",
+                        listOfNotNull(subscription.mcc, subscription.mnc)
+                            .joinToString(" / ").ifBlank { "Unknown" }
+                    ),
+                    Field("Country", subscription.countryIso.uppercase().ifBlank { "Unknown" })
+                )
+                // Primary cell: its bars, then its fields.
+                val metrics = primary?.let { cellMetrics(it, nrNsa) }.orEmpty()
+                if (metrics.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    metrics.forEach { SignalBar(it, Modifier.padding(vertical = 3.dp)) }
+                }
+                Spacer(Modifier.height(12.dp))
+                FieldGrid(primary?.let(::cellFields).orEmpty(), extraRow = operatorRow)
             }
-            Spacer(Modifier.height(12.dp))
-            FieldGrid(primary?.let(::cellFields).orEmpty(), extraRow = operatorRow)
+            if (frozen != null) {
+                Row(Modifier.align(Alignment.TopEnd)) {
+                    TrafficTestButton(testRun, onTestToggle)
+                    IconButton(onClick = onFrozenToggle) {
+                        Icon(
+                            painter = painterResource(
+                                if (frozen) R.drawable.ic_monitoring_locked
+                                else R.drawable.ic_monitoring_unlocked
+                            ),
+                            contentDescription = if (frozen) "Unfreeze live monitoring" else "Freeze live monitoring",
+                            tint = if (frozen) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    DiagOverflowMenu(diagEnabled, onDiagToggle, onTestSetup)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagOverflowMenu(enabled: Boolean, onToggle: () -> Unit, onTestSetup: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Outlined.MoreVert, contentDescription = "Network options")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Enable DIAG") },
+                trailingIcon = { if (enabled) Icon(Icons.Outlined.Check, contentDescription = null) },
+                onClick = { expanded = false; onToggle() }
+            )
+            DropdownMenuItem(
+                text = { Text("Test script") },
+                onClick = {
+                    expanded = false
+                    onTestSetup()
+                }
+            )
         }
     }
 }
@@ -584,29 +754,32 @@ private fun carrierGroups(subscription: NetworkSubscription, nrNsa: Boolean): Li
 }
 
 @Composable
-private fun CarrierSection(group: CarrierGroup) {
+private fun CarrierSection(group: CarrierGroup, diagEnabled: Boolean = false) {
     SectionTitle(group.title)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            CarrierTable(group)
+            CarrierTable(group, diagEnabled)
         }
     }
 }
 
-private val TABLE_LABEL_WIDTH = 64.dp
+private val TABLE_LABEL_WIDTH = 60.dp
+
+/** Carriers shown side by side before the columns share the width. */
+private const val TABLE_FIXED_COLUMNS = 5
 
 /** One column per carrier, one row per parameter. */
 @Composable
-private fun CarrierTable(group: CarrierGroup) {
+private fun CarrierTable(group: CarrierGroup, diagEnabled: Boolean = false) {
     val columns = group.columns
     BoxWithConstraints {
-        // Up to four carriers each column is fixed at the width four columns
+        // Up to five carriers each column is fixed at the width five columns
         // share, and the columns sit from the left, so a lone PCell isn't
-        // centred in empty space. From five carriers the columns share the
+        // centred in empty space. From six carriers the columns share the
         // width, which shrinks them further.
-        val colWidth = (maxWidth - TABLE_LABEL_WIDTH) / 4
-        val fixedCols = columns.size <= 4
-        val barMax = colWidth - 6.dp
+        val colWidth = (maxWidth - TABLE_LABEL_WIDTH) / TABLE_FIXED_COLUMNS
+        val fixedCols = columns.size <= TABLE_FIXED_COLUMNS
+        val barMax = colWidth - 4.dp
         val cellStyle = fittedCellStyle(
             columns,
             if (fixedCols) colWidth else (maxWidth - TABLE_LABEL_WIDTH) / columns.size
@@ -632,12 +805,14 @@ private fun CarrierTable(group: CarrierGroup) {
                     modifier = Modifier.width(TABLE_LABEL_WIDTH),
                     style = MaterialTheme.typography.labelMedium,
                     color = grey,
-                    fontWeight = if (header) FontWeight.Medium else null
+                    fontWeight = if (header) FontWeight.Medium else null,
+                    maxLines = 1,
+                    softWrap = false
                 )
                 columns.forEach { column ->
                     Box(
                         (if (fixedCols) Modifier.width(colWidth) else Modifier.weight(1f))
-                            .padding(horizontal = 3.dp),
+                            .padding(horizontal = 2.dp),
                         Alignment.Center
                     ) { cell(column) }
                 }
@@ -681,9 +856,9 @@ private fun CarrierTable(group: CarrierGroup) {
                 }
                 row("PCI") { text(it.cell.physicalId?.toString()) }
                 if (!group.coreOnly) {
-                    row("SS-RSRP") { bar(it.cell.rsrp, SignalMetric.RSRP) }
-                    row("SS-RSRQ") { bar(it.cell.rsrq, SignalMetric.RSRQ) }
-                    if (group.showNrNsaMetrics) row("SS-SINR") { bar(it.cell.sinr, SignalMetric.SINR) }
+                    row("RSRP") { bar(it.cell.rsrp, SignalMetric.RSRP) }
+                    row("RSRQ") { bar(it.cell.rsrq, SignalMetric.RSRQ) }
+                    if (group.showNrNsaMetrics) row("SINR") { bar(it.cell.sinr, SignalMetric.SINR) }
                 }
             } else {
                 row("Band") {
@@ -692,7 +867,7 @@ private fun CarrierTable(group: CarrierGroup) {
                 }
                 row("BW") { text(it.cell.bandwidthKhz?.let { bw -> formatDecimal(bw / 1000.0) }) }
                 row("EARFCN") { text(it.cell.channel?.toString()) }
-                if (anyHas { c -> c.channel?.let(::lteFrequenciesForEarfcn) }) {
+                if (!diagEnabled && anyHas { c -> c.channel?.let(::lteFrequenciesForEarfcn) }) {
                     row("DL MHz") {
                         text(
                             it.cell.channel?.let(::lteFrequenciesForEarfcn)
@@ -721,27 +896,17 @@ private fun CarrierTable(group: CarrierGroup) {
  * The table's cell text style: bodyMedium with equal-width digits, scaled
  * down when a column (minus its padding) is narrower than the widest value
  * would be at the normal size, instead of wrapping onto two lines. The widest
- * candidates are a signal value and a channel or cell ID of the longest
- * length, bold; they are measured as templates so the size doesn't change
- * with the digits shown.
+ * candidates are a signal value and a channel of the longest length; they are
+ * measured as templates so the size doesn't change with the digits shown.
  */
 @Composable
 private fun fittedCellStyle(columns: List<CarrierColumn>, columnWidth: Dp): TextStyle {
     val base = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum")
     val measurer = rememberTextMeasurer()
-    val available = with(LocalDensity.current) { (columnWidth - 8.dp).toPx() }
-    val digits = maxOf(
-        6,
-        columns.maxOfOrNull { column ->
-            maxOf(
-                column.cell.channel?.toString()?.length ?: 0,
-                column.cell.cellId?.toString()?.length ?: 0
-            )
-        } ?: 0
-    )
+    val available = with(LocalDensity.current) { (columnWidth - 4.dp).toPx() }
+    val digits = maxOf(6, columns.maxOfOrNull { it.cell.channel?.toString()?.length ?: 0 } ?: 0)
     val widest = remember(digits, base) {
-        val bold = base.copy(fontWeight = FontWeight.SemiBold)
-        listOf("-140", "8".repeat(digits)).maxOf { measurer.measure(it, bold).size.width }
+        listOf("-140", "8".repeat(digits)).maxOf { measurer.measure(it, base).size.width }
     }
     val fit = if (widest > 0) available / widest else 1f
     return if (fit >= 1f) base else base.copy(fontSize = base.fontSize * fit)

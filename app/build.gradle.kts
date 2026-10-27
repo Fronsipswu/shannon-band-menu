@@ -28,6 +28,14 @@ android {
                 "proguard-rules.pro"
             )
         }
+        create("diagTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".diagtest"
+            versionNameSuffix = "-diag-test"
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

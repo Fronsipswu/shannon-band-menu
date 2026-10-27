@@ -13,4 +13,5 @@ signing.properties
 .DS_Store
 Thumbs.db
 *.py
+!/app/binary/shannon-diagd/test_metrics.py
 /shannon-band-menu

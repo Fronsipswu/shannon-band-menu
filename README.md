@@ -62,6 +62,36 @@ Release identity comes from `PROGRAM_VERSION` in the source and the correspondin
 
 Bands hidden by the settings filter are excluded from Apply, but the modem capability query itself is never changed.
 
+### DIAG network metrics
+
+On the Telephony page, open the three-dot menu beside the padlock and select **Enable DIAG**.
+The app uses a separate native helper for detailed LTE/NR carrier tables, a two-minute
+DL/UL throughput graph, uplink statistics and per-carrier antenna measurements. DIAG tables
+stay in place during missing samples, with unavailable readings shown as dashes. The
+DL/UL MHz rows are omitted while DIAG is enabled; switching it off restores the API view.
+
+An active compatible root broker is preferred. Without one, direct access is attempted only
+when `/dev/umts_dm0` is free; busy or uncertain ownership refuses activation. The helper
+does not start the broker or stop another diagnostic client or Android service. Supported
+metrics depend on the modem's current logging profile; independent fresh-boot NR activation
+remains unverified. NR port counts and neighbour-cell additions are not included.
+
+See [native helper build/protocol notes](app/binary/shannon-diagd/README.md). For an isolated
+**SBM DIAG Test** APK, run `gradlew.bat testDebugUnitTest assembleDiagTest` from `app/`.
+
+### Traffic test script
+
+Open **Test script** in the Telephony page's three-dot menu. Enter your HTTP GET download
+URL and/or HTTP POST upload URL, choose Download or Upload, select 1–8 parallel streams,
+and set a duration. Blank or zero duration means run until stopped. Save, then press the
+play button immediately to the left of the padlock; press it again to stop.
+
+The live status shows HTTP payload Mbps, the remaining time and request errors. This rate
+is separate from the DIAG PHY graph. The test uses Android's current network route and
+works independently of DIAG. It continues when switching pages, stops at its duration or
+when explicitly stopped, and is stopped when the app is closed normally. URLs and options
+are saved, but tests never start automatically. No server URL is built in.
+
 ## Acknowledgements
 
 Base UI design by [@h3nnes](https://github.com/h3nnes). Built with Material 3 and libsu.

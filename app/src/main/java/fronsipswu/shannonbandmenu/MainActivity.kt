@@ -18,6 +18,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.datastore.preferences.preferencesDataStore
 import fronsipswu.shannonbandmenu.ui.MainScreen
 import fronsipswu.shannonbandmenu.ui.CellLockResult
+import fronsipswu.shannonbandmenu.network.TrafficTest
 import fronsipswu.shannonbandmenu.ui.theme.ShannonMaterialTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -997,6 +998,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (isFinishing) {
+            TrafficTest.get(applicationContext).stop()
+        }
         daemonManager.stop()
     }
 }
