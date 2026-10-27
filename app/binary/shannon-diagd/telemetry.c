@@ -33,6 +33,7 @@ static int recent(int64_t now, int64_t stamp) {
 static void clear_cell(Cell *c) {
     memset(c, 0, sizeof(*c));
     c->measured_us = -1;
+    c->uplink_us = -1;
     c->band = c->arfcn = c->pci = c->bw_mhz = c->scs_khz = c->rx = c->tx = NAN;
     c->rsrp = c->rsrq = c->rssi = c->sinr = c->ssb_sinr = c->csi_sinr = c->pdsch_sinr = NAN;
     c->rank = c->layers = c->cqi = c->mcs_dl = c->mcs_ul = c->rb_dl = c->rb_ul = c->bler_dl = NAN;
@@ -73,12 +74,13 @@ static void finish(Telemetry *s, int64_t second) {
         total += a->dl_bits;
         ul += a->ul_bits;
         c->phy_dl = s->ever_dl ? a->dl_bits / 1e6 : NAN;
-        c->phy_ul = s->ever_ul ? a->ul_bits / 1e6 : NAN;
+        int uplink = recent((second + 1) * 1000000 - 1, c->uplink_us);
+        c->phy_ul = uplink ? a->ul_bits / 1e6 : NAN;
         if (a->rb_count) {
             c->rb_ul = (double)(a->rb_sum / a->rb_count);
             c->ul_rb_total = (double)a->rb_sum;
-        } else if (s->ever_ul)
-            c->rb_ul = c->ul_rb_total = 0;
+        } else
+            c->rb_ul = c->ul_rb_total = uplink ? 0 : NAN;
         if (a->bler_count)
             c->bler_dl = (double)a->bler_sum / (a->bler_count * 10.0);
         c->rank = a->rank_max ? a->rank_max : NAN;
@@ -191,6 +193,8 @@ static int decode_lte(Telemetry *s, const uint8_t *p, size_t n) {
         c->cqi = p[at + 24] <= 15 ? p[at + 24] : NAN;
         c->phy_dl = read_u32(p + at + 25) / 1000.0;
         c->phy_ul = read_u32(p + at + 29) / 1000.0;
+        if (c->phy_ul > 0)
+            c->uplink_us = s->now_us;
         c->measured_us = s->now_us;
     }
     for (unsigned i = count + 1; i < LTE_CELLS; i++)
@@ -200,11 +204,13 @@ static int decode_lte(Telemetry *s, const uint8_t *p, size_t n) {
 static int modulation(unsigned bits) {
     return bits == 1 || bits == 2 || bits == 4 || bits == 6 || bits == 8 || bits == 10;
 }
-static void lte_grant(Cell *c, const uint8_t *p, int uplink) {
+static void lte_grant(Cell *c, const uint8_t *p, int uplink, int64_t now) {
     double bler = read_u32(p) / 100.0;
     if (uplink) {
         c->bler_ul = bler <= 100 ? bler : NAN;
         c->rb_ul = p[8] <= 100 ? p[8] : NAN;
+        if (c->rb_ul > 0)
+            c->uplink_us = now;
         c->mcs_ul = p[9] <= 31 ? p[9] : NAN;
         c->mod_ul_bits = modulation(p[10]) ? p[10] : NAN;
         c->pusch_dbm = plausible(i16(p + 11) / 100.0, -46, 31);
@@ -221,20 +227,20 @@ static int lte_aux(Telemetry *s, unsigned msg, const uint8_t *p, size_t n) {
         unsigned count = read_u32(p + 43);
         if (count > 31)
             return -1;
-        lte_grant(&s->lte[0], p, 0);
+        lte_grant(&s->lte[0], p, 0, s->now_us);
         for (unsigned i = 1; i <= count; i++)
-            lte_grant(&s->lte[i], p + 47 + (i - 1) * 43, 0);
+            lte_grant(&s->lte[i], p + 47 + (i - 1) * 43, 0, s->now_us);
         return 1;
     }
     if (msg == 0x1302 && n == 1828) {
-        lte_grant(&s->lte[0], p, 1);
+        lte_grant(&s->lte[0], p, 1, s->now_us);
         /* First SCell start is capture-confirmed; later current-ICD strides
          * differ from old ShannonDM. Do not extrapolate the older stride. */
         unsigned count = read_u32(p + 57);
         if (count > 31)
             return -1;
         if (count)
-            lte_grant(&s->lte[1], p + 61, 1);
+            lte_grant(&s->lte[1], p + 61, 1, s->now_us);
         return 1;
     }
     if (msg == 0x0602 && n == 836) {
@@ -467,6 +473,8 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
         a->ul_bits += read_u32(p + 24);
         s->ever_ul = 1;
         unsigned rb = (read_u32(p + 4) >> 23) & 511;
+        if (read_u32(p + 24) > 0 || (rb >= 1 && rb <= 273))
+            s->nr[slot].uplink_us = s->now_us;
         if (rb >= 1 && rb <= 273) {
             a->rb_sum += rb;
             a->rb_count++;
@@ -537,6 +545,7 @@ static void cells(FILE *f, Cell *cells, int n, int64_t now, int nr) {
         fprintf(f, "%s{\"slot\":%d,\"role\":\"%s\",\"fresh\":%s", first ? "" : ",", i,
                 i ? "scell" : "pcell", recent(now, c->measured_us) ? "true" : "false");
         first = 0;
+        fprintf(f, ",\"uplink_active\":%s", recent(now, c->uplink_us) ? "true" : "false");
         number(f, "band", c->band, 1);
         number(f, "arfcn", c->arfcn, 1);
         number(f, "pci", c->pci, 1);

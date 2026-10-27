@@ -89,7 +89,7 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val chainRsrq = json.numbers("chain_rsrq_db")
     val label get() = band?.let { if (nr) "n$it" else "B$it" }
     val role get() = if (primary) "P" else "S$slot"
-    val hasUplink get() = ulMbps != null || ulRbs != null || ulMcs != null || pusch != null
+    val hasUplink = json.optBoolean("uplink_active", false)
 
     private fun value(name: String) = json.number(name)
 

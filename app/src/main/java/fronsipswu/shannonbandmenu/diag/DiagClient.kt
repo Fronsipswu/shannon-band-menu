@@ -15,7 +15,7 @@ import java.io.IOException
 /** One app's native stats helper; it never starts/stops the optional broker. */
 class DiagClient(private val context: Context) {
     companion object {
-        const val VERSION = "0.3.3"
+        const val VERSION = "0.3.4"
         private const val BINARY = "sbm-diagd"
     }
 

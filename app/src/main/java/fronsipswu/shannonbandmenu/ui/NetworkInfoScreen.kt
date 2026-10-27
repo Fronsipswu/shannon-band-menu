@@ -134,7 +134,9 @@ fun NetworkInfoScreen(
     }
     DisposableEffect(activity, isActive) {
         fun updateActivity() = diagMonitor.setActive(
-            isActive && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            // Quick Settings may pause the activity while it remains visible.
+            // Keep receiving configuration emitted during an airplane-mode toggle.
+            isActive && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
         )
         val observer = LifecycleEventObserver { _, _ -> updateActivity() }
         activity.lifecycle.addObserver(observer)

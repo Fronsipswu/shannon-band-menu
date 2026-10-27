@@ -11,6 +11,7 @@
 typedef struct {
     int present;
     int64_t measured_us;
+    int64_t uplink_us;
     double band, arfcn, pci, bw_mhz, scs_khz, rx, tx;
     double rsrp, rsrq, rssi, sinr, ssb_sinr, csi_sinr, pdsch_sinr;
     double rank, layers, cqi, mcs_dl, mcs_ul, rb_dl, rb_ul, bler_dl;
