@@ -67,7 +67,7 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val sinr = if (nr) value("ssb_sinr_db") ?: value("sinr_db") else value("sinr_db")
     val csiSinr = value("csi_sinr_db")
     val pdschSinr = value("pdsch_sinr_db")
-    val rank = value("layers") ?: value("rank")
+    val rank = value("rank") ?: value("layers")
     val mcs = value("mcs_dl")
     val rbs = value("prbs_dl")
     val bler = value("bler_dl_pct")

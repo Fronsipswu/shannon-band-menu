@@ -1,5 +1,34 @@
 /* SBM control client. The metrics stream remains receive-only. */
 static char broker_session[4096];
+static char broker_tap_path[108];
+
+static int broker_tap_connect(void) {
+    int fd = connect_socket(broker_tap_path);
+    if (fd < 0)
+        return -1;
+    struct ucred peer;
+    socklen_t size = sizeof(peer);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &size) || peer.uid != geteuid()) {
+        close(fd);
+        errno = EACCES;
+        return -1;
+    }
+    int buffer = 1024 * 1024;
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
+    return fd;
+}
+
+/* Reattach receive-only copies while retaining the existing logical lease.
+ * A dead control connection requires a new session, not a passive reattach. */
+static int broker_resume(int control_fd) {
+    char byte;
+    ssize_t n = recv(control_fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+    if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+        errno = ECONNRESET;
+        return -1;
+    }
+    return broker_tap_connect();
+}
 
 static int broker_rpc(int fd, const char *request, char *reply, size_t cap) {
     if (write_all(fd, (const uint8_t *)request, strlen(request)))
@@ -76,7 +105,8 @@ static int broker_begin(const char *control_path, int *control_fd, int *stream_f
         errno = EPROTO;
         return -1;
     }
-    int stream = connect_socket(tap);
+    snprintf(broker_tap_path, sizeof(broker_tap_path), "%s", tap);
+    int stream = broker_tap_connect();
     if (stream < 0) {
         close(fd);
         return -1;

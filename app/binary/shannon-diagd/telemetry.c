@@ -81,8 +81,12 @@ static void finish(Telemetry *s, int64_t second) {
             c->rb_ul = c->ul_rb_total = 0;
         if (a->bler_count)
             c->bler_dl = (double)a->bler_sum / (a->bler_count * 10.0);
-        if (a->mcs_max >= 0)
-            c->mcs_dl = a->mcs_max;
+        c->rank = a->rank_max ? a->rank_max : NAN;
+        c->mcs_dl = a->mcs_max >= 0 ? a->mcs_max : NAN;
+        /* Current ID-6 format: capture-confirmed 256-QAM MCS mapping.
+         * Retransmission/reserved indices 28..31 are excluded at decode. */
+        c->mod_dl_bits = a->mcs_max < 0 ? NAN : a->mcs_max <= 4 ? 2 :
+                         a->mcs_max <= 10 ? 4 : a->mcs_max <= 19 ? 6 : 8;
     }
     s->phy_dl = s->ever_dl ? (s->seen_period ? s->period_dl_bits : total) / 1e6 : NAN;
     s->phy_ul = s->ever_ul ? ul / 1e6 : NAN;
@@ -406,7 +410,9 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
         return 1;
     }
     if (id == 29 && n == 4) {
-        s->nr[0].rank = (read_u32(p) & 3) + 1;
+        int rank = (int)(read_u32(p) & 3) + 1;
+        if (rank > s->accum[0].rank_max)
+            s->accum[0].rank_max = rank;
         s->nr[0].layers = ((read_u32(p) >> 2) & 3) + 1;
         return 1;
     }
@@ -419,8 +425,8 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
         unsigned rank = read_u32(p + 12) + 1, layer = read_u32(p + 48);
         if (cq >= 1 && cq <= 15)
             c->cqi = cq;
-        if (rank >= 1 && rank <= 4)
-            c->rank = rank;
+        if (rank >= 1 && rank <= 4 && (int)rank > s->accum[slot].rank_max)
+            s->accum[slot].rank_max = (int)rank;
         if (layer >= 1 && layer <= 4)
             c->layers = layer;
         int power = i16(p + 24);

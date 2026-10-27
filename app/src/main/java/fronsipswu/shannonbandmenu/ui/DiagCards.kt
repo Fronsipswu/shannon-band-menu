@@ -143,9 +143,7 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
             if (nr) {
                 row("CSINR") { metric(it.csiSinr, SignalMetric.SINR) }
                 row("PDSINR") { metric(it.pdschSinr, SignalMetric.SINR) }
-                row("SCS") { text(number(it.scs, 0)) }
                 row("Rx") { text(it.rx?.toString()) }
-                row("Beam") { text(it.beam?.toString()) }
             } else {
                 row("Tx/Rx") {
                     text(if (it.tx == null && it.rx == null) null else "${it.tx ?: "–"}×${it.rx ?: "–"}")

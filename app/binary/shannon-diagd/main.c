@@ -16,7 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.3.1"
+#define VERSION "0.3.3"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {
@@ -427,6 +427,8 @@ int main(int argc, char **argv) {
     uint8_t buf[16384];
     int result = 0;
     int64_t start = monotonic_us();
+    int64_t retry_window = start;
+    unsigned stream_retries = 0;
     if (start < 0) {
         perror("clock_gettime");
         close(fd);
@@ -472,6 +474,28 @@ int main(int argc, char **argv) {
                 feed(&state, &framer, buf, (size_t)n, monotonic_us());
             else if (!n) {
                 fprintf(stderr, "DM input closed (%s).\n", mode);
+                if (app_uid >= 0 && !strcmp(mode, "broker") && !stopping) {
+                    int64_t now = monotonic_us();
+                    if (now - retry_window > 10000000) {
+                        retry_window = now;
+                        stream_retries = 0;
+                    }
+                    int replacement = stream_retries++ < 3 ? broker_resume(control_fd) : -1;
+                    if (replacement >= 0) {
+                        close(fd);
+                        fd = replacement;
+                        memset(&framer, 0, sizeof(framer));
+                        telemetry_init(&state, metrics_publish, &metrics);
+                        free(metrics.latest);
+                        metrics.latest = NULL;
+                        metrics.published_at = 0;
+                        metrics.publish_after_second = now / 1000000 + 1;
+                        fprintf(stderr, "Reattached broker receive stream; discarded incomplete measurements.\n");
+                        continue;
+                    }
+                    fprintf(stderr, "Cannot resume broker stream; releasing session.\n");
+                    result = 1;
+                }
                 break;
             } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("read");

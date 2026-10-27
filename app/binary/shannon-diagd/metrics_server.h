@@ -8,6 +8,7 @@ typedef struct {
     uid_t app_uid;
     int64_t last_request;
     int64_t published_at;
+    int64_t publish_after_second;
     char input[256];
     size_t input_size;
     char output[METRICS_REPLY_SIZE];
@@ -58,6 +59,8 @@ static int metrics_open(MetricsServer *server, uid_t app_uid) {
 /* The decoder's callback preserves the existing schema and completed windows. */
 static void metrics_publish(Telemetry *telemetry, int64_t second, void *opaque) {
     MetricsServer *server = opaque;
+    if (second < server->publish_after_second)
+        return;
     char *json = NULL;
     size_t size = 0;
     FILE *stream = open_memstream(&json, &size);

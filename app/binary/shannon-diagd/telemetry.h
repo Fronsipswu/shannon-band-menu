@@ -22,7 +22,7 @@ typedef struct {
 
 typedef struct {
     uint64_t dl_bits, ul_bits, rb_sum, rb_count, bler_sum, bler_count;
-    int mcs_max;
+    int mcs_max, rank_max;
 } Accum;
 
 typedef struct {
