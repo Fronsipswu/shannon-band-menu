@@ -9,4 +9,5 @@ void rrc_csi_reset(void);
 int rrc_csi_message(int channel, const uint8_t *message, int length, int pci, uint32_t arfcn);
 int rrc_csi_ports(int pci, uint32_t arfcn, int pcell);
 int rrc_csi_band(int pci, uint32_t arfcn);
+int rrc_csi_bandwidth(int pci, uint32_t arfcn, int scs_khz);
 #endif

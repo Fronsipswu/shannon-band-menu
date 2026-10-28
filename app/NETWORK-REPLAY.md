@@ -45,9 +45,12 @@ two-minute chart positions the cursor at the right edge on the newest sample;
 scrubbing back moves it toward the middle, where it stays once at least a minute
 of newer data is available. Its window, line gaps, and autoscaling stay the same.
 
-CSI port hold runs only on live readings; seeking never feeds old measurements
-back into the live hold state. Missing values remain missing. The native helper
-and broker protocol are unchanged.
+CSI port and bandwidth holds run only on live readings; seeking never feeds old
+measurements back into the live caches. Widths are retained per subscription and
+matching SSB NR-ARFCN/PCI; each newly valid width replaces the previous value.
+The helper's RRC configuration fallback is documented in
+`binary/shannon-diagd/rrc/README.md`. Missing measurements remain missing when
+neither a source nor a matching held configuration is available.
 
 Validation: `NetworkReplayTest` checks stable frozen timelines, duplicate polling,
 time eviction across gaps, the byte budget, and future graph samples. QBM's

@@ -152,7 +152,7 @@ class NetworkReplayModel(application: Application) : AndroidViewModel(applicatio
         val carriers = snapshot.subscriptions.associate { subscription ->
             val id = subscription.subscriptionId
             id to if (diag.enabled && owner == id) {
-                diagMonitor.holdPorts(id, diagDisplayCarriers(subscription, data.takeIf { matched == id }))
+                diagMonitor.holdConfiguration(id, diagDisplayCarriers(subscription, data.takeIf { matched == id }))
             } else emptyList()
         }
         return NetworkReplayFrame(SystemClock.elapsedRealtime(), snapshot, diag, matched, owner, carriers)

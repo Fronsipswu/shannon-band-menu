@@ -36,7 +36,7 @@ class MetricsTests(unittest.TestCase):
     def test_stats_and_clean_stop(self):
         result = self.request('stats')
         self.assertTrue(result['ok'])
-        self.assertEqual(result['version'], '0.4.0')
+        self.assertEqual(result['version'], '0.4.2')
         time.sleep(1.2)
         self.assertEqual(self.request('stats')['snapshot']['schema'], 1)
         self.assertTrue(self.request('stop')['ok'])

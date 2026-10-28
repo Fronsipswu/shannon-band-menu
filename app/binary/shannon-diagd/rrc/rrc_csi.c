@@ -43,6 +43,7 @@ struct cell {
     int pci;                   /* +1, 0 = not signalled */
     uint32_t ssb_arfcn;        /* +1, 0 = not signalled */
     int band;                  /* 0 = not signalled */
+    uint16_t dl_rb[3];          /* FR1 carrierBandwidth at 15/30/60 kHz SCS */
     struct resource resource[RESOURCES];
     struct resource_set set[SETS];
     struct resource_config config[RESOURCE_CONFIGS];
@@ -269,6 +270,17 @@ static void apply_common(struct group *group, int index, const ServingCellConfig
         cell->ssb_arfcn = ssb;
     if (band)
         cell->band = band;
+    if (frequency) {
+        memset(cell->dl_rb, 0, sizeof cell->dl_rb);
+        for (int i = 0; i < frequency->scs_SpecificCarrierList.list.count; i++) {
+            const SCS_SpecificCarrier_t *carrier = frequency->scs_SpecificCarrierList.list.array[i];
+            long spacing = carrier->subcarrierSpacing, rb = carrier->carrierBandwidth;
+            if (spacing < 0 || spacing >= 3 || rb < 1 || rb > 275)
+                continue;
+            uint16_t *stored = &cell->dl_rb[spacing];
+            *stored = *stored && *stored != rb ? UINT16_MAX : (uint16_t)rb;
+        }
+    }
     cell->present = 1;
 }
 
@@ -356,6 +368,9 @@ static void name_spcell(const struct rrc_origin *record) {
     if (master->spcell < 0)
         master->spcell = 0;
     struct cell *pcell = &master->cell[master->spcell];
+    if ((pcell->pci && pcell->pci != record->pci + 1) ||
+        (pcell->ssb_arfcn && pcell->ssb_arfcn != record->arfcn + 1))
+        memset(pcell->dl_rb, 0, sizeof pcell->dl_rb);
     pcell->present = 1;
     pcell->pci = record->pci + 1;
     pcell->ssb_arfcn = record->arfcn + 1;
@@ -471,6 +486,45 @@ int rrc_csi_band(int pci, uint32_t arfcn) {
     init_once();
     const struct cell *cell = find_cell(pci, arfcn, &group, &index);
     return cell ? cell->band : 0;
+}
+
+/* TS 38.104 table 5.3.2-1: exact FR1 NRB/SCS pairs only. This is the
+ * full carrier grid, never the active BWP or scheduled PRB allocation. */
+static int fr1_bandwidth(unsigned spacing, unsigned rb) {
+    static const uint16_t mhz[] = {3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100};
+    static const uint16_t blocks[3][16] = {
+        {15, 25, 52, 79, 106, 133, 160, 188, 216, 242, 270, 0, 0, 0, 0, 0},
+        {0, 11, 24, 38, 51, 65, 78, 92, 106, 119, 133, 162, 189, 217, 245, 273},
+        {0, 0, 11, 18, 24, 31, 38, 44, 51, 58, 65, 79, 93, 107, 121, 135}
+    };
+    if (spacing >= 3 || !rb)
+        return 0;
+    for (unsigned i = 0; i < sizeof mhz / sizeof mhz[0]; i++)
+        if (blocks[spacing][i] == rb)
+            return mhz[i];
+    return 0;
+}
+
+int rrc_csi_bandwidth(int pci, uint32_t arfcn, int scs_khz) {
+    init_once();
+    if (pci < 0 || pci > 1007 || !arfcn || arfcn > 875000)
+        return 0; /* This fallback covers FR1 only. */
+    int spacing = scs_khz == 15 ? 0 : scs_khz == 30 ? 1 : scs_khz == 60 ? 2 : -1;
+    if (spacing < 0)
+        return 0;
+    int width = 0;
+    for (int g = 0; g < GROUPS; g++) {
+        for (int i = 0; i < CELLS; i++) {
+            const struct cell *cell = &groups[g].cell[i];
+            if (!cell->present || cell->pci != pci + 1 || cell->ssb_arfcn != arfcn + 1)
+                continue;
+            int candidate = fr1_bandwidth((unsigned)spacing, cell->dl_rb[spacing]);
+            if (!candidate || (width && width != candidate))
+                return 0;
+            width = candidate;
+        }
+    }
+    return width;
 }
 
 int rrc_csi_ports(int pci, uint32_t arfcn, int pcell) {

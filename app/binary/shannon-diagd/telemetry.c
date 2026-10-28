@@ -561,7 +561,13 @@ static void cells(FILE *f, Cell *cells, int n, int64_t now, int nr) {
         number(f, "band", c->band, 1);
         number(f, "arfcn", c->arfcn, 1);
         number(f, "pci", c->pci, 1);
-        number(f, "bandwidth_mhz", c->bw_mhz, 1);
+        double bandwidth = c->bw_mhz;
+        if (nr && !isfinite(bandwidth)) {
+            int configured = shannon_rrc_bandwidth(c);
+            if (configured > 0)
+                bandwidth = configured;
+        }
+        number(f, "bandwidth_mhz", bandwidth, 1);
         number(f, "scs_khz", c->scs_khz, 1);
         number(f, "rx", c->rx, 1);
         number(f, "tx", c->tx, 1);

@@ -99,6 +99,10 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
         if (ports == csiPorts) this
         else DiagCarrier(nr, JSONObject(json.toString()).put("csi_ports", ports ?: JSONObject.NULL))
 
+    internal fun withBandwidth(width: Double?): DiagCarrier =
+        if (width == bandwidth) this
+        else DiagCarrier(nr, JSONObject(json.toString()).put("bandwidth_mhz", width ?: JSONObject.NULL))
+
     private fun modulation(bits: Double?): String? = when (bits?.toInt()) {
         2 -> "QPSK"
         4 -> "16QAM"

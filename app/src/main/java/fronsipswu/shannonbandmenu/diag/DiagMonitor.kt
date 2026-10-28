@@ -31,12 +31,16 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
     private var active = false
     private val sessions = DiagSessionRunner(viewModelScope)
     private val portHolds = mutableMapOf<Int, NrPortHold>()
+    private val bandwidthHolds = mutableMapOf<Int, NrBandwidthHold>()
 
-    fun holdPorts(subscriptionId: Int, carriers: List<DiagCarrier>): List<DiagCarrier> =
-        portHolds.getOrPut(subscriptionId) { NrPortHold() }.apply(carriers)
+    fun holdConfiguration(subscriptionId: Int, carriers: List<DiagCarrier>): List<DiagCarrier> {
+        val ports = portHolds.getOrPut(subscriptionId) { NrPortHold() }.apply(carriers)
+        return bandwidthHolds.getOrPut(subscriptionId) { NrBandwidthHold() }.apply(ports)
+    }
 
     fun setEnabled(enabled: Boolean) {
         portHolds.clear()
+        bandwidthHolds.clear()
         preferences.edit().putBoolean("enabled", enabled).apply()
         mutableState.update { State(enabled = enabled) }
         reschedule()

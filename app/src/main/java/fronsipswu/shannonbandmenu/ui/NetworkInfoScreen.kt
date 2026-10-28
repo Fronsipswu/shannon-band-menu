@@ -260,7 +260,8 @@ fun NetworkInfoScreen(
                         val subscriptionDiag = diag.takeIf { matchedDiagOwner == id }
                         val diagCarriers = shownFrame.carriers[id].orEmpty()
                         val nrNsa = subscriptionDiag?.rat?.let { it == "NSA" } ?: isNrNsa(subscription.cells)
-                        val diagPrimaries = primaryCells.map { diagServingCell(it, subscriptionDiag) }
+                        val heldDiag = subscriptionDiag?.copy(carriers = diagCarriers)
+                        val diagPrimaries = primaryCells.map { diagServingCell(it, heldDiag) }
 
 
                         if (current.subscriptions.size > 1) {

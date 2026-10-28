@@ -57,6 +57,12 @@ int shannon_rrc_ports(const Cell *cell, int primary) {
     return rrc_csi_ports((int)cell->pci, (uint32_t)cell->arfcn, primary);
 }
 
+int shannon_rrc_bandwidth(const Cell *cell) {
+    if (!cell->present || !isfinite(cell->pci) || !isfinite(cell->arfcn) || !isfinite(cell->scs_khz))
+        return 0;
+    return rrc_csi_bandwidth((int)cell->pci, (uint32_t)cell->arfcn, (int)cell->scs_khz);
+}
+
 int shannon_rrc_decode(Telemetry *state, unsigned stack, const uint8_t *data, size_t size) {
     /* Current ICD 9.0 captures use stack 1 for this record. Other variants
      * need independent framing evidence rather than sharing assembly state. */
