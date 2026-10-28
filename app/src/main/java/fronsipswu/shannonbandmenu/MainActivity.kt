@@ -98,9 +98,22 @@ class MainActivity : ComponentActivity() {
                 var refreshKey0 by remember { mutableIntStateOf(0) }
                 var refreshKey1 by remember { mutableIntStateOf(0) }
                 var debugEnabled by remember { mutableStateOf(false) }
+                var quickSelectHidden by remember { mutableStateOf(false) }
+                var nrModeHidden by remember { mutableStateOf(false) }
                 var bandDisplayPreferences by remember { mutableStateOf(BandDisplayPreferences()) }
                 val scope = rememberCoroutineScope()
                 val modemLock = remember { Mutex() }
+
+                LaunchedEffect(Unit) {
+                    BandPreferences.getQuickSelectHidden(bandDataStore).collectLatest {
+                        quickSelectHidden = it
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    BandPreferences.getNrModeHidden(bandDataStore).collectLatest {
+                        nrModeHidden = it
+                    }
+                }
 
                 var cellLockResult by remember { mutableStateOf<CellLockResult?>(null) }
                 var cellLockRefreshing by remember { mutableStateOf(false) }
@@ -972,6 +985,18 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     visibleGsmBands = bandDisplayPreferences.gsm,
+                    quickSelectHidden = quickSelectHidden,
+                    onToggleQuickSelect = {
+                        val hidden = !quickSelectHidden
+                        quickSelectHidden = hidden
+                        scope.launch { BandPreferences.setQuickSelectHidden(bandDataStore, hidden) }
+                    },
+                    nrModeHidden = nrModeHidden,
+                    onToggleNrMode = {
+                        val hidden = !nrModeHidden
+                        nrModeHidden = hidden
+                        scope.launch { BandPreferences.setNrModeHidden(bandDataStore, hidden) }
+                    },
                     visibleWcdmaBands = bandDisplayPreferences.wcdma,
                     visibleLteBands = bandDisplayPreferences.lte,
                     visibleNrSaBands = bandDisplayPreferences.nrSa,

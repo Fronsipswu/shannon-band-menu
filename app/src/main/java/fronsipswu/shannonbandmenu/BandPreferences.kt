@@ -28,6 +28,8 @@ object BandPreferences {
     private val PROFILE_SAVED_SIM1 = booleanPreferencesKey("profile_saved_sim1")
     private val PROFILE_SAVED_SIM2 = booleanPreferencesKey("profile_saved_sim2")
     private val DEBUG_LOGGING = booleanPreferencesKey("debug_logging")
+    private val QUICK_SELECT_HIDDEN = booleanPreferencesKey("quick_select_hidden")
+    private val NR_MODE_HIDDEN = booleanPreferencesKey("nr_mode_hidden")
     private val NR_INDEPENDENT_SUPPORTED = booleanPreferencesKey("nr_independent_supported")
     private val VISIBLE_GSM_BANDS = stringSetPreferencesKey("visible_gsm_bands")
     private val VISIBLE_WCDMA_BANDS = stringSetPreferencesKey("visible_wcdma_bands")
@@ -116,6 +118,20 @@ object BandPreferences {
 
     suspend fun setNrIndependentSupported(dataStore: DataStore<Preferences>, supported: Boolean) {
         dataStore.edit { it[NR_INDEPENDENT_SUPPORTED] = supported }
+    }
+
+    fun getQuickSelectHidden(dataStore: DataStore<Preferences>): Flow<Boolean> =
+        dataStore.data.map { it[QUICK_SELECT_HIDDEN] ?: false }
+
+    suspend fun setQuickSelectHidden(dataStore: DataStore<Preferences>, hidden: Boolean) {
+        dataStore.edit { it[QUICK_SELECT_HIDDEN] = hidden }
+    }
+
+    fun getNrModeHidden(dataStore: DataStore<Preferences>): Flow<Boolean> =
+        dataStore.data.map { it[NR_MODE_HIDDEN] ?: false }
+
+    suspend fun setNrModeHidden(dataStore: DataStore<Preferences>, hidden: Boolean) {
+        dataStore.edit { it[NR_MODE_HIDDEN] = hidden }
     }
 
     fun getBandDisplayPreferences(dataStore: DataStore<Preferences>): Flow<BandDisplayPreferences> {

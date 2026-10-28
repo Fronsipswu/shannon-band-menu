@@ -94,6 +94,10 @@ fun BandLockScreen(
     debugEnabled: Boolean = false,
     onDebugToggle: () -> Unit = {},
     nrIndependentSupported: Boolean? = null,
+    quickSelectHidden: Boolean = false,
+    onToggleQuickSelect: () -> Unit = {},
+    nrModeHidden: Boolean = false,
+    onToggleNrMode: () -> Unit = {},
     visibleGsmBands: Set<Int>? = null,
     visibleWcdmaBands: Set<Int>? = null,
     visibleLteBands: Set<Int>? = null,
@@ -134,7 +138,11 @@ fun BandLockScreen(
                     settingsEnabled = hardware != null,
                     onSettings = { if (hardware != null) showSettings = true },
                     debugEnabled = debugEnabled,
-                    onDebugToggle = onDebugToggle
+                    onDebugToggle = onDebugToggle,
+                    quickSelectHidden = quickSelectHidden,
+                    onToggleQuickSelect = onToggleQuickSelect,
+                    nrModeHidden = nrModeHidden,
+                    onToggleNrMode = onToggleNrMode.takeIf { hardware?.nr?.isNotEmpty() == true }
                 )
             }
         )
@@ -307,6 +315,8 @@ fun BandLockScreen(
                             displayNrNsa = displayNrNsa,
                             useIndependentLock = useIndependentLock,
                             refreshKey = refreshKey,
+                            showQuickSelect = !quickSelectHidden,
+                            showNrMode = !nrModeHidden,
                             onModeChange = { mode -> onModeChange(0, mode) }
                         )
                     }
@@ -353,6 +363,8 @@ private fun SimBandLockPage(
     displayNrNsa: Set<Int>,
     useIndependentLock: Boolean,
     refreshKey: Int,
+    showQuickSelect: Boolean = true,
+    showNrMode: Boolean = true,
     onModeChange: (NrMode) -> Unit = {}
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -564,7 +576,7 @@ private fun SimBandLockPage(
         val isNrNsaEnabled = isNrEnabled && !isNrOnly &&
             (state.nrMode == NrMode.BOTH || state.nrMode == NrMode.NSA)
 
-        if (hardware.nr.isNotEmpty()) {
+        if (showNrMode && hardware.nr.isNotEmpty()) {
             SmallTitle("NR mode", modifier = Modifier.then(if (isNrEnabled) Modifier else Modifier.alpha(0.4f)))
             val nrModeIndex = when (state.nrMode) {
                 NrMode.BOTH, NrMode.UNKNOWN -> 0
@@ -602,8 +614,7 @@ private fun SimBandLockPage(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Spacer(modifier = Modifier.height(4.dp))
+        if (showQuickSelect) Spacer(modifier = Modifier.height(20.dp))
 
         var recentlyClicked by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
         LaunchedEffect(recentlyClicked) {
@@ -658,7 +669,7 @@ private fun SimBandLockPage(
             quickItems.filter { it.second in 4..6 }
         ).filter { it.isNotEmpty() }
 
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        if (showQuickSelect) Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             WindowDropdownPreference(
                 entries = quickGroups.map { group ->
                     DropdownEntry(items = group.map { (label, idx) ->

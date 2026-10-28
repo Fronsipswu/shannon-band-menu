@@ -20,7 +20,11 @@ internal fun AppOverflowMenu(
     settingsEnabled: Boolean,
     onSettings: () -> Unit,
     debugEnabled: Boolean,
-    onDebugToggle: () -> Unit
+    onDebugToggle: () -> Unit,
+    quickSelectHidden: Boolean = false,
+    onToggleQuickSelect: (() -> Unit)? = null,
+    nrModeHidden: Boolean = false,
+    onToggleNrMode: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -38,6 +42,16 @@ internal fun AppOverflowMenu(
                 expanded = false
                 onSettings()
             }
+        )
+        if (onToggleNrMode != null) DropdownMenuItem(
+            text = { Text("Hide NR mode") },
+            trailingIcon = { if (nrModeHidden) Icon(Icons.Outlined.Check, contentDescription = null) },
+            onClick = { expanded = false; onToggleNrMode() }
+        )
+        if (onToggleQuickSelect != null) DropdownMenuItem(
+            text = { Text("Hide quick select") },
+            trailingIcon = { if (quickSelectHidden) Icon(Icons.Outlined.Check, contentDescription = null) },
+            onClick = { expanded = false; onToggleQuickSelect() }
         )
         DropdownMenuItem(
             text = { Text("Debug logging") },
