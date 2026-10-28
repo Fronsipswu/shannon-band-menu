@@ -35,10 +35,12 @@ static void clear_cell(Cell *c) {
     memset(c, 0, sizeof(*c));
     c->measured_us = -1;
     c->uplink_us = -1;
+    c->mcs_ul_us = -1;
     c->band = c->arfcn = c->pci = c->bw_mhz = c->scs_khz = c->rx = c->tx = NAN;
     c->rsrp = c->rsrq = c->rssi = c->sinr = c->ssb_sinr = c->csi_sinr = c->pdsch_sinr = NAN;
     c->rank = c->layers = c->cqi = c->mcs_dl = c->mcs_ul = c->rb_dl = c->rb_ul = c->bler_dl = NAN;
     c->bler_ul = c->mod_dl_bits = c->mod_ul_bits = NAN;
+    c->layers_ul = NAN;
     c->pusch_dbm = c->pucch_dbm = c->beam = c->tm = NAN;
     c->phy_dl = c->phy_ul = c->ul_rb_total = NAN;
     for (int j = 0; j < 4; j++)
@@ -79,6 +81,9 @@ static void finish(Telemetry *s, int64_t second) {
         c->phy_dl = s->ever_dl ? a->dl_bits / 1e6 : NAN;
         int uplink = recent((second + 1) * 1000000 - 1, c->uplink_us);
         c->phy_ul = uplink ? a->ul_bits / 1e6 : NAN;
+        c->bler_ul = a->ul_records ? 100.0 * a->ul_retransmits / a->ul_records : NAN;
+        c->mod_ul_bits = a->ul_mod_max ? a->ul_mod_max : NAN;
+        c->layers_ul = a->ul_layers_max ? a->ul_layers_max : NAN;
         if (a->rb_count) {
             c->rb_ul = (double)(a->rb_sum / a->rb_count);
             c->ul_rb_total = (double)a->rb_sum;
@@ -445,8 +450,12 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
         if (power >= -45 && power <= 30)
             c->pucch_dbm = power;
         unsigned mcs = read_u32(p + 44);
-        if (mcs <= 27)
+        /* Zero in this periodic debug field is also used for no MCS report.
+         * Keep a recent positive report instead of overwriting it with zero. */
+        if (mcs >= 1 && mcs <= 31) {
             c->mcs_ul = mcs;
+            c->mcs_ul_us = s->now_us;
+        }
         return 1;
     }
     if (id == 6 && n == 48) {
@@ -475,7 +484,19 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
         if (slot < 0)
             return 1;
         Accum *a = &s->accum[slot];
-        a->ul_bits += read_u32(p + 24);
+        unsigned tbs = read_u32(p + 24);
+        a->ul_bits += tbs;
+        if (tbs > 0) {
+            unsigned control = read_u32(p + 4), timing = read_u32(p + 8);
+            unsigned mod = (control >> 9) & 31, layers = (timing >> 25) & 7;
+            a->ul_records++;
+            if (!(control & 2))
+                a->ul_retransmits++;
+            if ((mod == 2 || mod == 4 || mod == 6 || mod == 8) && (int)mod > a->ul_mod_max)
+                a->ul_mod_max = (int)mod;
+            if (layers >= 1 && layers <= 4 && (int)layers > a->ul_layers_max)
+                a->ul_layers_max = (int)layers;
+        }
         s->ever_ul = 1;
         unsigned rb = (read_u32(p + 4) >> 23) & 511;
         if (read_u32(p + 24) > 0 || (rb >= 1 && rb <= 273))
@@ -583,7 +604,11 @@ static void cells(FILE *f, Cell *cells, int n, int64_t now, int nr) {
         number(f, "rank", fresh ? c->rank : NAN, 1);
         number(f, "layers", fresh ? c->layers : NAN, 1);
         number(f, "mcs_dl", fresh ? c->mcs_dl : NAN, 1);
-        number(f, "mcs_ul", fresh ? c->mcs_ul : NAN, 1);
+        int ul_mcs_fresh = !nr || (recent(now, c->mcs_ul_us) && recent(now, c->uplink_us));
+        number(f, "mcs_ul", fresh && ul_mcs_fresh ? c->mcs_ul : NAN, 1);
+        if (nr) {
+            number(f, "layers_ul", c->layers_ul, 1);
+        }
         number(f, "prbs_dl", fresh ? c->rb_dl : NAN, 1);
         number(f, nr ? "prbs_ul_avg" : "prbs_ul_grant", c->rb_ul, 1);
         number(f, "prbs_ul_total", c->ul_rb_total, 1);

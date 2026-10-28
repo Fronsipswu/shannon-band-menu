@@ -1,0 +1,46 @@
+/* DISABLED REFERENCE: original configuration-consumer checks.
+ * Restore the reference inference before integrating this into a test build. */
+#include <assert.h>
+#include "../rrc/rrc_csi.c"
+#include "../rrc/shannon_rrc.c"
+
+uint16_t read_u16(const uint8_t *p) {
+    return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
+}
+
+int main(void) {
+    rrc_csi_reset();
+    struct cell *cell = &groups[0].cell[0];
+    cell->present = 1;
+    cell->pci = 101;
+    cell->ssb_arfcn = 520001;
+    SRS_Resource_t resource = {.srs_ResourceId = 0, .nrofSRS_Ports = 1};
+    SRS_Resource_t *resources[] = {&resource};
+    struct SRS_Config__srs_ResourceToAddModList add = {0};
+    add.list.array = resources;
+    add.list.count = 1;
+    SRS_Config_t config = {.srs_ResourceToAddModList = &add};
+    struct SetupRelease_SRS_Config setup = {.present = SetupRelease_SRS_Config_PR_setup};
+    setup.choice.setup = &config;
+    BWP_UplinkDedicated_t bwp = {.srs_Config = &setup};
+    apply_ul_bwp(cell, 0, &bwp);
+    assert(rrc_csi_ul_ports(100, 520000) == 2);
+    Cell live = {.present = 1, .pci = 100, .arfcn = 520000, .layers_ul = 1};
+    assert(!strcmp(shannon_rrc_ul_mode(&live), "SMSL"));
+    assert(rrc_csi_ul_ports(101, 520000) == 0);
+    assert(rrc_csi_ul_ports(100, 520001) == 0);
+    resource.nrofSRS_Ports = 0;
+    apply_ul_bwp(cell, 0, &bwp);
+    assert(rrc_csi_ul_ports(100, 520000) == 1);
+    assert(!strcmp(shannon_rrc_ul_mode(&live), "SISO"));
+    resource.nrofSRS_Ports = 1;
+    apply_ul_bwp(cell, 1, &bwp);
+    assert(rrc_csi_ul_ports(100, 520000) == 0);
+    assert(shannon_rrc_ul_mode(&live) == NULL);
+    setup.present = SetupRelease_SRS_Config_PR_release;
+    apply_ul_bwp(cell, 0, &bwp);
+    assert(rrc_csi_ul_ports(100, 520000) == 0);
+    rrc_csi_reset();
+    assert(rrc_csi_ul_ports(100, 520000) == 0);
+    return 0;
+}

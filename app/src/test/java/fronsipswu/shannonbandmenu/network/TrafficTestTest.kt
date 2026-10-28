@@ -3,6 +3,10 @@ package fronsipswu.shannonbandmenu.network
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -11,6 +15,7 @@ import org.junit.Before
 import org.junit.Test
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -20,6 +25,7 @@ class TrafficTestTest {
     private val executor = Executors.newCachedThreadPool()
     private val runners = mutableListOf<TrafficTest>()
     private val downloads = AtomicInteger()
+    private val downloadEncodings = ConcurrentHashMap.newKeySet<String>()
     private val uploads = AtomicLong()
     private val failures = AtomicInteger()
     private lateinit var base: String
@@ -29,6 +35,7 @@ class TrafficTestTest {
         server.executor = executor
         server.createContext("/download") { exchange ->
             downloads.incrementAndGet()
+            downloadEncodings.add(exchange.requestHeaders.getFirst("Accept-Encoding") ?: "unset")
             try {
                 val body = ByteArray(16 * 1024)
                 exchange.sendResponseHeaders(200, body.size.toLong())
@@ -104,7 +111,45 @@ class TrafficTestTest {
         assertNotNull(active.remaining)
         withTimeout(3500) { test.run.first { !it.running } }
         assertTrue(downloads.get() > 2)
+        assertEquals(setOf("identity"), downloadEncodings)
         assertNull(test.run.value.error)
+    }
+
+    @Test fun parallelDownloadRateMatchesReceivedPayloadRate() = runBlocking {
+        val sent = AtomicLong()
+        server.createContext("/paced-download") { exchange ->
+            try {
+                exchange.sendResponseHeaders(200, 0)
+                val block = ByteArray(16 * 1024)
+                val until = System.nanoTime() + 8_000_000_000L
+                exchange.responseBody.use { output ->
+                    while (System.nanoTime() < until) {
+                        output.write(block)
+                        output.flush()
+                        sent.addAndGet(block.size.toLong())
+                        Thread.sleep(16)
+                    }
+                }
+            } catch (_: java.io.IOException) {
+                // Stopping the client closes the local streaming response.
+            } finally {
+                exchange.close()
+            }
+        }
+        val test = runner(TrafficTest.Config(getUrl = "$base/paced-download", streams = 2, seconds = 6))
+        assertTrue(test.start())
+        val samples = withTimeout(5500) {
+            test.run.filter { it.running && it.mbps > 0 }.map {
+                Triple(it.mbps, sent.get(), System.nanoTime())
+            }.take(3).toList()
+        }
+        test.stop()
+        for ((previous, current) in samples.zipWithNext()) {
+            val expected = (current.second - previous.second) * 8.0 /
+                (current.third - previous.third) * 1000.0
+            // Independent server writes and client sampling can straddle a block.
+            assertEquals("Two-stream payload rate", expected, current.first, maxOf(1.0, expected * 0.15))
+        }
     }
 
     @Test fun uploadUsesPostAndGeneratedPayload() = runBlocking {

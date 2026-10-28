@@ -13,10 +13,12 @@ typedef struct {
     int dl_scheduled;
     int64_t measured_us;
     int64_t uplink_us;
+    int64_t mcs_ul_us;
     double band, arfcn, pci, bw_mhz, scs_khz, rx, tx;
     double rsrp, rsrq, rssi, sinr, ssb_sinr, csi_sinr, pdsch_sinr;
     double rank, layers, cqi, mcs_dl, mcs_ul, rb_dl, rb_ul, bler_dl;
     double bler_ul, mod_dl_bits, mod_ul_bits;
+    double layers_ul;
     double pusch_dbm, pucch_dbm, beam, tm;
     double chain_rsrp[4], chain_rsrq[4], chain_sinr[4];
     double phy_dl, phy_ul, ul_rb_total;
@@ -25,7 +27,9 @@ typedef struct {
 typedef struct {
     uint64_t dl_bits, ul_bits, rb_sum, rb_count, bler_sum, bler_count;
     uint64_t dl_records;
+    uint64_t ul_records, ul_retransmits;
     int mcs_max, rank_max;
+    int ul_mod_max, ul_layers_max;
 } Accum;
 
 typedef struct {

@@ -1,0 +1,106 @@
+/* DISABLED REFERENCE: original 0.4.3 inference, omitted from build.ps1.
+ * See README.md for integration points and known limitations. */
+
+/* Add to the private RRC struct cell:
+    uint8_t ul_bwp_present;
+    uint8_t ul_srs_ports[5][64];
+ */
+
+static void apply_ul_bwp(struct cell *cell, int bwp, const BWP_UplinkDedicated_t *dedicated) {
+    if (bwp < 0 || bwp >= 5)
+        return;
+    cell->ul_bwp_present |= (uint8_t)(1u << bwp);
+    if (!dedicated || !dedicated->srs_Config)
+        return;
+    uint8_t *ports = cell->ul_srs_ports[bwp];
+    const struct SetupRelease_SRS_Config *srs = dedicated->srs_Config;
+    if (srs->present == SetupRelease_SRS_Config_PR_release) {
+        memset(ports, 0, 64);
+        return;
+    }
+    if (srs->present != SetupRelease_SRS_Config_PR_setup || !srs->choice.setup)
+        return;
+    const SRS_Config_t *config = srs->choice.setup;
+    if (config->srs_ResourceToReleaseList) {
+        for (int i = 0; i < config->srs_ResourceToReleaseList->list.count; i++) {
+            long id = *config->srs_ResourceToReleaseList->list.array[i];
+            if (id >= 0 && id < 64)
+                ports[id] = 0;
+        }
+    }
+    if (config->srs_ResourceToAddModList) {
+        for (int i = 0; i < config->srs_ResourceToAddModList->list.count; i++) {
+            const SRS_Resource_t *resource = config->srs_ResourceToAddModList->list.array[i];
+            long id = resource->srs_ResourceId, count = resource->nrofSRS_Ports;
+            if (id >= 0 && id < 64)
+                ports[id] = count >= 0 && count <= 2 ? (uint8_t)(1u << count) : 0;
+        }
+    }
+}
+
+static void apply_uplink(struct cell *cell, const UplinkConfig_t *uplink) {
+    if (!uplink)
+        return;
+    if (uplink->initialUplinkBWP)
+        apply_ul_bwp(cell, 0, uplink->initialUplinkBWP);
+    if (uplink->uplinkBWP_ToReleaseList) {
+        for (int i = 0; i < uplink->uplinkBWP_ToReleaseList->list.count; i++) {
+            long id = *uplink->uplinkBWP_ToReleaseList->list.array[i];
+            if (id >= 0 && id < 5) {
+                cell->ul_bwp_present &= (uint8_t)~(1u << id);
+                memset(cell->ul_srs_ports[id], 0, sizeof cell->ul_srs_ports[id]);
+            }
+        }
+    }
+    if (uplink->uplinkBWP_ToAddModList) {
+        for (int i = 0; i < uplink->uplinkBWP_ToAddModList->list.count; i++) {
+            const BWP_Uplink_t *bwp = uplink->uplinkBWP_ToAddModList->list.array[i];
+            apply_ul_bwp(cell, (int)bwp->bwp_Id, bwp->bwp_Dedicated);
+        }
+    }
+}
+
+int rrc_csi_ul_ports(int pci, uint32_t arfcn) {
+    init_once();
+    int ports = 0;
+    if (pci < 0 || pci > 1007 || !arfcn)
+        return 0;
+    for (int g = 0; g < GROUPS; g++) {
+        for (int i = 0; i < CELLS; i++) {
+            const struct cell *cell = &groups[g].cell[i];
+            if (!cell->present || cell->pci != pci + 1 || cell->ssb_arfcn != arfcn + 1)
+                continue;
+            if (!cell->ul_bwp_present)
+                return 0;
+            for (int bwp = 0; bwp < 5; bwp++) {
+                if (!(cell->ul_bwp_present & (1u << bwp)))
+                    continue;
+                int found = 0;
+                for (int r = 0; r < 64; r++) {
+                    int candidate = cell->ul_srs_ports[bwp][r];
+                    if (!candidate)
+                        continue;
+                    if (ports && candidate != ports)
+                        return 0;
+                    ports = candidate;
+                    found = 1;
+                }
+                if (!found)
+                    return 0;
+            }
+        }
+    }
+    return ports;
+}
+
+/* Original wrapper in shannon_rrc.c; requires a valid live cell identity. */
+const char *shannon_rrc_ul_mode(const Cell *cell) {
+    if (!cell->present || !isfinite(cell->pci) || !isfinite(cell->arfcn))
+        return NULL;
+    if (cell->layers_ul == 2)
+        return "SMDL";
+    if (cell->layers_ul != 1)
+        return NULL;
+    int ports = rrc_csi_ul_ports((int)cell->pci, (uint32_t)cell->arfcn);
+    return ports == 1 ? "SISO" : ports == 2 || ports == 4 ? "SMSL" : NULL;
+}

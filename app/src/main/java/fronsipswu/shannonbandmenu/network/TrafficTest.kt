@@ -111,7 +111,8 @@ class TrafficTest internal constructor(
                         val now = System.nanoTime()
                         if (session.endAt != 0L && now >= session.endAt) break
                         val total = session.bytes.get()
-                        val rate = (total - lastBytes) * 8.0 / (now - lastAt) * 1000.0
+                        val elapsedSeconds = (now - lastAt) / 1_000_000_000.0
+                        val rate = (total - lastBytes) * 8.0 / elapsedSeconds / 1_000_000.0
                         lastBytes = total
                         lastAt = now
                         synchronized(this@TrafficTest) {
@@ -171,6 +172,9 @@ class TrafficTest internal constructor(
     private suspend fun download(
         connection: HttpURLConnection, session: Session, buffer: ByteArray, requestEnd: Long
     ) {
+        // Android otherwise transparently decompresses gzip, inflating the
+        // byte counter for compressible responses. Count received payload.
+        connection.setRequestProperty("Accept-Encoding", "identity")
         checkResponse(connection)
         connection.inputStream.use { input ->
             while (currentCoroutineContext().isActive && beforeDeadline(requestEnd) &&

@@ -8,6 +8,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DiagSnapshotTest {
+    @Test fun uplinkRankAcceptsOnlyOneOrTwoLayers() {
+        for (layers in listOf(1.0, 2.0, 0.0, 3.0, 4.0, 1.5)) {
+            val carrier = DiagCarrier(true, JSONObject().put("slot", 0).put("layers_ul", layers))
+            assertEquals(layers.takeIf { it == 1.0 || it == 2.0 }, carrier.ulRank)
+        }
+        assertNull(DiagCarrier(true, JSONObject().put("slot", 0)).ulRank)
+    }
+
     private fun snapshot(rat: String = "NSA", lte: String = "[]", nr: String = "[]") = DiagSnapshot.parse(
         JSONObject("""{"schema":1,"window_s":4,"rat":"$rat",
             "lte":{"dl_mbps":12.5,"ul_mbps":0,"cells":$lte},

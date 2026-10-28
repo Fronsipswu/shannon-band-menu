@@ -42,7 +42,13 @@ Owner inspection is best effort; the helper lock cannot exclude unrelated direct
 
 The Kotlin layer parses finite values, preserves nulls/real zeros, and attributes unlabelled modem data only to a uniquely matching subscription (or the sole subscription). Missing samples retain DIAG tables with identity placeholders; previous RF readings are not held as new measurements. API identity/configuration can fill otherwise unknown columns. Switching off DIAG returns to the original API tables.
 
-The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR Port/Rx includes CSI-RS ports from received RRC configuration and the RX count. Some fields, including per-chain SINR and NR UL rank/TX mode, are not emitted by the current decoder and display dashes. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
+The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR Port/Rx includes CSI-RS ports from received RRC configuration and the RX count. Per-chain SINR remains unavailable. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
+
+Version 0.4.4 includes per-carrier NR uplink modulation, layers and retransmission
+BLER from the supported PUSCH records. Periodic zero MCS samples no longer erase
+a recent positive report. The uplink card displays Rank 1 or 2 from PUSCH layers and
+uses QBM's green-to-red transmit-power scale for PUSCH and PUCCH. See
+[uplink findings and limits](UPLINK-2026-10-28.md).
 
 The helper's NR `rx` field comes from channel-configuration records. In the app,
 NR Port/Rx prefers the number of currently valid RX0..RX3 RSRP reports (strictly
@@ -69,6 +75,6 @@ Version 0.3.3 shows the actual rank indicator before the separate layer field, a
 
 ## Tests
 
-`test_metrics.py --binary <host-helper>` checks stats framing, explicit Stop, app-loss timeout, duplicate-start exclusion and cross-UID rejection (the latter needs root on Linux). Compile `main.c telemetry.c -lm` with ASan/UBSan for these host checks; the tests use synthetic stdin and never open a modem. App tests cover schema handling, SIM attribution, serving identities, missing-sample layout retention, NR RB scales and the ported graph scale/window rules.
+`test_metrics.py --binary <host-helper>` checks stats framing, explicit Stop, app-loss timeout, duplicate-start exclusion and cross-UID rejection (the latter needs root on Linux). Host builds link `main.c`, `telemetry.c`, `rrc/shannon_rrc.c`, `rrc/rrc_csi.c`, `rrc/rrc_nr_gen.c` and `-lm`; the tests use synthetic stdin and never open a modem. App tests cover schema handling, SIM attribution, serving identities, missing-sample layout retention, NR RB scales and the ported graph scale/window rules.
 
 For an isolated phone APK, run `gradlew.bat testDebugUnitTest assembleDiagTest`. The package is `fronsipswu.shannonbandmenu.diagtest`, labelled **SBM DIAG Test**. The normal app package is separate.

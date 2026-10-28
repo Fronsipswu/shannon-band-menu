@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.4.2"
+#define VERSION "0.4.4"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {

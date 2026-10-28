@@ -56,7 +56,7 @@ internal fun DiagTitle(title: String) {
         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-/** Same per-carrier row order as the reference page, without NR port counts. */
+/** Per-carrier metric rows, using the reference page's compact table layout. */
 @Composable
 private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithConstraints {
     val columnWidth = (maxWidth - 64.dp) / maxOf(4, carriers.size)
@@ -107,6 +107,13 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
         DiagValueBar(value, value?.let { (it / 100).toFloat().coerceIn(0f, 1f) }, color,
             textSize.value, suffix = "%")
     }
+    @Composable
+    fun power(value: Double?) {
+        val colors = listOf(Color(0xFF1E9E50), Color(0xFF7CB342), Color(0xFFEAB01F),
+            Color(0xFFF07E26), Color(0xFFE0453A))
+        DiagValueBar(value, value?.let(::txPowerFraction),
+            colors[value?.let(::txPowerLevel) ?: 0], textSize.value)
+    }
     val nr = carriers.all { it.nr }
     Column {
         row("") { carrier ->
@@ -124,13 +131,11 @@ private fun DiagTable(carriers: List<DiagCarrier>, uplink: Boolean) = BoxWithCon
             if (nr) {
                 row("Rank") { text(number(it.ulRank, 0)) }
             }
-            row("PUSCH") { power ->
-                DiagValueBar(power.pusch, power.pusch?.let { ((it + 40) / 70).toFloat().coerceIn(0f, 1f) },
-                    MaterialTheme.colorScheme.primary, textSize.value)
+            row("PUSCH") { carrier ->
+                power(carrier.pusch)
             }
-            row("PUCCH") { power ->
-                DiagValueBar(power.pucch, power.pucch?.let { ((it + 40) / 70).toFloat().coerceIn(0f, 1f) },
-                    MaterialTheme.colorScheme.primary, textSize.value)
+            row("PUCCH") { carrier ->
+                power(carrier.pucch)
             }
             row("BLER") { bler(it.ulBler) }
             row("PHY UL") { text(number(it.ulMbps), UplinkColor, bold = true) }
@@ -185,6 +190,17 @@ private fun DiagValueBar(
             color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.onSurface)
     }
+}
+
+/** QBM TX scale: -27 dBm empty/green through +26 dBm full/red. */
+internal fun txPowerFraction(dbm: Double): Float = ((dbm + 27) / 53).toFloat().coerceIn(0f, 1f)
+
+internal fun txPowerLevel(dbm: Double): Int = when {
+    dbm <= 0 -> 0
+    dbm <= 10 -> 1
+    dbm <= 17 -> 2
+    dbm <= 23 -> 3
+    else -> 4
 }
 
 private fun signalColor(metric: SignalMetric, value: Double?): Color =

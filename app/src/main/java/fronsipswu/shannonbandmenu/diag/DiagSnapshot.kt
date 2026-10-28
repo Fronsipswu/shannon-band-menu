@@ -83,8 +83,7 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val ulRbs = value(if (nr) "prbs_ul_avg" else "prbs_ul_grant")
     val ulMcs = value("mcs_ul")
     val ulBler = value("bler_ul_pct")
-    val ulRank = value("layers_ul")
-    val ulTxMode = json.optString("tx_mode_ul").takeIf { it.isNotBlank() && it != "null" }
+    val ulRank = value("layers_ul")?.takeIf { it == 1.0 || it == 2.0 }
     val pusch = value("pusch_dbm")
     val pucch = value("pucch_dbm")
     val mode = value("transmission_mode")?.toInt()
