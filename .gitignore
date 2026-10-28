@@ -14,4 +14,5 @@ signing.properties
 Thumbs.db
 *.py
 !/app/binary/shannon-diagd/test_metrics.py
+!/app/binary/shannon-diagd/tests/validate_hspa.py
 /shannon-band-menu

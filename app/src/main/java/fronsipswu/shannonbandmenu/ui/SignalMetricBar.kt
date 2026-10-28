@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.dp
 enum class SignalMetric {
     RSRP,
     RSRQ,
-    SINR
+    SINR,
+    RSCP,
+    ECNO
 }
 
 /** Returns the QC level, where 1 is best and 5 is worst. */
@@ -67,6 +69,20 @@ fun signalMetricLevel(metric: SignalMetric, value: Int?): Int? {
             value >= 3 -> 4
             else -> 5
         }
+        SignalMetric.RSCP -> when {
+            value >= -75 -> 1
+            value >= -85 -> 2
+            value >= -95 -> 3
+            value >= -105 -> 4
+            else -> 5
+        }
+        SignalMetric.ECNO -> when {
+            value >= -6 -> 1
+            value >= -10 -> 2
+            value >= -14 -> 3
+            value >= -18 -> 4
+            else -> 5
+        }
     }
 }
 
@@ -77,6 +93,8 @@ fun signalMetricFraction(metric: SignalMetric, value: Int?): Float? {
         SignalMetric.RSRP -> -140 to -70
         SignalMetric.RSRQ -> -40 to 0
         SignalMetric.SINR -> -30 to 40
+        SignalMetric.RSCP -> -120 to -40
+        SignalMetric.ECNO -> -24 to 0
     }
     return ((value - minimum).toFloat() / (maximum - minimum))
         .coerceIn(0f, 1f)
@@ -87,6 +105,8 @@ private fun signalMetricThresholds(metric: SignalMetric): List<Int> = when (metr
     SignalMetric.RSRP -> listOf(-85, -95, -105, -115)
     SignalMetric.RSRQ -> listOf(-6, -10, -15, -20)
     SignalMetric.SINR -> listOf(22, 15, 10, 3)
+    SignalMetric.RSCP -> listOf(-75, -85, -95, -105)
+    SignalMetric.ECNO -> listOf(-6, -10, -14, -18)
 }
 
 // Mid-tone level colours, readable on both the light and the dark track.

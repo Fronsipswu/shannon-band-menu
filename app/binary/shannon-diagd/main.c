@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.4.6"
+#define VERSION "0.4.9"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {
@@ -56,9 +56,15 @@ static int activate(int fd) {
                                      0,    0x20, 0, 0, 0,    0, 0xff, 0x7e};
     static const uint8_t refresh[] = {0x7f, 0x0f, 0, 0, 0x0c, 0, 0,    0,   0xa0,
                                       0,    0x22, 0, 0, 0,    0, 0xff, 0x7e};
-    const uint8_t *packets[] = {start, query, select, refresh};
-    size_t sizes[] = {sizeof(start), sizeof(query), sizeof(select), sizeof(refresh)};
-    for (int i = 0; i < 4; i++) {
+    /* DMConsole SelectHspaItem/RefreshHspaItem(ItemOption.EnableAll). */
+    static const uint8_t hspa_select[] = {0x7f, 0x0f, 0, 0, 0x0c, 0, 0, 0, 0xa0,
+                                         0, 0x40, 0, 0, 0, 0, 0xff, 0x7e};
+    static const uint8_t hspa_refresh[] = {0x7f, 0x0f, 0, 0, 0x0c, 0, 0, 0, 0xa0,
+                                          0, 0x42, 0, 0, 0, 0, 0xff, 0x7e};
+    const uint8_t *packets[] = {start, query, select, refresh, hspa_select, hspa_refresh};
+    size_t sizes[] = {sizeof(start), sizeof(query), sizeof(select), sizeof(refresh),
+                      sizeof(hspa_select), sizeof(hspa_refresh)};
+    for (size_t i = 0; i < sizeof(packets) / sizeof(packets[0]); i++) {
         if (write_all(fd, packets[i], sizes[i]))
             return -1;
         struct timespec pause = {0, 50000000};
@@ -433,7 +439,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     fprintf(stderr, "shannon-diagd %s connected (%s); %s\n", VERSION, mode,
-            init ? "probe/LTE selection sent" : "listen only");
+            init ? "probe/LTE/HSPA selection sent" : "listen only");
     while (!stopping) {
         int64_t us = monotonic_us();
         if (us < 0) {

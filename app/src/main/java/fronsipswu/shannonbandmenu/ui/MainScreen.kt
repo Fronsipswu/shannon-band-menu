@@ -1,12 +1,14 @@
 package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
@@ -29,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import fronsipswu.shannonbandmenu.ModemState
 import fronsipswu.shannonbandmenu.FrequencyLockState
 import fronsipswu.shannonbandmenu.NrMode
@@ -94,181 +97,197 @@ fun MainScreen(
     onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
     ForegroundNetworkMonitoring()
-    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
-    val pagerScope = rememberCoroutineScope()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val twoPane = maxWidth >= 720.dp
+        val paneGap = if (twoPane) 12.dp else 0.dp
+        val pageSize = if (twoPane) PageSize.Fixed((maxWidth - paneGap) / 2) else PageSize.Fill
+        val pagerState = rememberPagerState(initialPage = if (twoPane) 0 else 1, pageCount = { 4 })
+        val pagerScope = rememberCoroutineScope()
+        val visiblePages = pagerState.currentPage..(pagerState.currentPage + if (twoPane) 1 else 0)
 
-    fun selectPage(page: Int) {
-        if (pagerState.currentPage == page && !pagerState.isScrollInProgress) return
-        pagerScope.launch { pagerState.animateScrollToPage(page) }
-    }
-    LaunchedEffect(snackbarMessage) {
-        snackbarMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            onSnackbarShown()
+        LaunchedEffect(twoPane) {
+            if (twoPane) pagerState.scrollToPage(pagerState.currentPage / 2 * 2)
         }
-    }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            if (!navbarHidden) NavigationBar {
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 0,
-                    onClick = { selectPage(0) },
-                    icon = {
-                        Icon(
-                            painterResource(R.drawable.ic_network_info),
-                            contentDescription = "Telephony Info"
-                        )
-                    },
-                    label = { Text("Telephony") }
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 1,
-                    onClick = { selectPage(1) },
-                    icon = {
-                        Icon(
-                            painterResource(R.drawable.ic_tune),
-                            contentDescription = "Bands"
-                        )
-                    },
-                    label = { Text("Bands") }
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 2,
-                    onClick = { selectPage(2) },
-                    icon = {
-                        Icon(
-                            painterResource(R.drawable.ic_cell_lock),
-                            contentDescription = "Cell Lock"
-                        )
-                    },
-                    label = { Text("Cell Lock") }
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 3,
-                    onClick = { selectPage(3) },
-                    icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
-                    label = { Text("Info") }
-                )
-            } else {
-                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
-            }
-        },
-        snackbarHost = {
-            SnackbarHost(snackbarHostState) { data ->
-                Snackbar(
-                    snackbarData = data,
-                    containerColor = if (snackbarIsError) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.inverseSurface
-                    },
-                    contentColor = if (snackbarIsError) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.inverseOnSurface
-                    }
-                )
+        fun selectPage(page: Int) {
+            // The last page shares a spread with its predecessor, rather than
+            // leaving half of the unfolded display empty.
+            val target = if (twoPane) page.coerceAtMost(2) else page
+            if (pagerState.currentPage == target && !pagerState.isScrollInProgress) return
+            pagerScope.launch { pagerState.animateScrollToPage(target) }
+        }
+        LaunchedEffect(snackbarMessage) {
+            snackbarMessage?.let {
+                snackbarHostState.showSnackbar(it)
+                onSnackbarShown()
             }
         }
-    ) { contentPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            HorizontalPager(
-                state = pagerState,
-                beyondViewportPageCount = 1,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                if (page == 0) {
-                    NetworkInfoScreen(
-                        // Selection only controls replay playback, never collection.
-                        isActive = pagerState.settledPage == 0,
-                        contentPadding = contentPadding
+
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (!navbarHidden) NavigationBar {
+                    NavigationBarItem(
+                        selected = 0 in visiblePages,
+                        onClick = { selectPage(0) },
+                        icon = {
+                            Icon(
+                                painterResource(R.drawable.ic_network_info),
+                                contentDescription = "Telephony Info"
+                            )
+                        },
+                        label = { Text("Telephony") }
                     )
-                } else if (page == 1) {
-                    BandLockScreen(
-                        modemState = modemState,
-                        desiredProfile = desiredProfile,
-                        isLoading = isLoading,
-                        refreshingSlots = refreshingSlots,
-                        onRefresh = onRefresh,
-                        refreshKey0 = refreshKey0,
-                        refreshKey1 = refreshKey1,
-                        onApply = onApply,
-                        onReset = onReset,
-                        onModeChange = onModeChange,
-                        debugEnabled = debugEnabled,
-                        onDebugToggle = onDebugToggle,
-                        nrIndependentSupported = nrIndependentSupported,
-                        quickSelectHidden = quickSelectHidden,
-                        onToggleQuickSelect = onToggleQuickSelect,
-                        nrModeHidden = nrModeHidden,
-                        onToggleNrMode = onToggleNrMode,
-                        visibleGsmBands = visibleGsmBands,
-                        visibleWcdmaBands = visibleWcdmaBands,
-                        visibleLteBands = visibleLteBands,
-                        visibleNrSaBands = visibleNrSaBands,
-                        visibleNrNsaBands = visibleNrNsaBands,
-                        contentPadding = contentPadding,
-                        onBandVisibilitySave = onBandVisibilitySave
+                    NavigationBarItem(
+                        selected = 1 in visiblePages,
+                        onClick = { selectPage(1) },
+                        icon = {
+                            Icon(
+                                painterResource(R.drawable.ic_tune),
+                                contentDescription = "Bands"
+                            )
+                        },
+                        label = { Text("Bands") }
                     )
-                } else if (page == 2) {
-                    FrequencyLockScreen(
-                        state = frequencyLockState,
-                        isRefreshing = frequencyLockRefreshing,
-                        refreshKey = frequencyLockRefreshKey,
-                        onRefresh = onFrequencyLockRefresh,
-                        onApply = onFrequencyLockApply,
-                        onReset = onFrequencyLockReset,
-                        contentPadding = contentPadding
+                    NavigationBarItem(
+                        selected = 2 in visiblePages,
+                        onClick = { selectPage(2) },
+                        icon = {
+                            Icon(
+                                painterResource(R.drawable.ic_cell_lock),
+                                contentDescription = "Cell Lock"
+                            )
+                        },
+                        label = { Text("Cell Lock") }
+                    )
+                    NavigationBarItem(
+                        selected = 3 in visiblePages,
+                        onClick = { selectPage(3) },
+                        icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
+                        label = { Text("Info") }
                     )
                 } else {
-                    InfoScreen(
-                        contentPadding = contentPadding,
-                        navbarHidden = navbarHidden,
-                        onNavbarHiddenToggle = onNavbarHiddenToggle,
-                        debugEnabled = debugEnabled,
-                        onDebugToggle = onDebugToggle,
-                        hardware = modemState?.hardware,
-                        visibleGsmBands = visibleGsmBands,
-                        visibleWcdmaBands = visibleWcdmaBands,
-                        visibleLteBands = visibleLteBands,
-                        visibleNrSaBands = visibleNrSaBands,
-                        visibleNrNsaBands = visibleNrNsaBands,
-                        onBandVisibilitySave = onBandVisibilitySave
+                    Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                }
+            },
+            snackbarHost = {
+                SnackbarHost(snackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = if (snackbarIsError) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.inverseSurface
+                        },
+                        contentColor = if (snackbarIsError) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.inverseOnSurface
+                        }
                     )
                 }
             }
-
-            if (isLoading && pagerState.settledPage != 0 &&
-                !pagerState.isScrollInProgress
-            ) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+        ) { contentPadding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                HorizontalPager(
+                    state = pagerState,
+                    pageSize = pageSize,
+                    pageSpacing = paneGap,
+                    beyondViewportPageCount = 1,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    Box(Modifier.fillMaxSize()) {
+                        if (page == 0) {
+                            NetworkInfoScreen(
+                                // Selection only controls replay playback, never collection.
+                                isActive = pagerState.settledPage == 0,
+                                contentPadding = contentPadding
+                            )
+                        } else if (page == 1) {
+                            BandLockScreen(
+                                modemState = modemState,
+                                desiredProfile = desiredProfile,
+                                isLoading = isLoading,
+                                refreshingSlots = refreshingSlots,
+                                onRefresh = onRefresh,
+                                refreshKey0 = refreshKey0,
+                                refreshKey1 = refreshKey1,
+                                onApply = onApply,
+                                onReset = onReset,
+                                onModeChange = onModeChange,
+                                debugEnabled = debugEnabled,
+                                onDebugToggle = onDebugToggle,
+                                nrIndependentSupported = nrIndependentSupported,
+                                quickSelectHidden = quickSelectHidden,
+                                onToggleQuickSelect = onToggleQuickSelect,
+                                nrModeHidden = nrModeHidden,
+                                onToggleNrMode = onToggleNrMode,
+                                visibleGsmBands = visibleGsmBands,
+                                visibleWcdmaBands = visibleWcdmaBands,
+                                visibleLteBands = visibleLteBands,
+                                visibleNrSaBands = visibleNrSaBands,
+                                visibleNrNsaBands = visibleNrNsaBands,
+                                contentPadding = contentPadding,
+                                onBandVisibilitySave = onBandVisibilitySave
+                            )
+                        } else if (page == 2) {
+                            FrequencyLockScreen(
+                                state = frequencyLockState,
+                                isRefreshing = frequencyLockRefreshing,
+                                refreshKey = frequencyLockRefreshKey,
+                                onRefresh = onFrequencyLockRefresh,
+                                onApply = onFrequencyLockApply,
+                                onReset = onFrequencyLockReset,
+                                contentPadding = contentPadding
+                            )
+                        } else {
+                            InfoScreen(
+                                contentPadding = contentPadding,
+                                navbarHidden = navbarHidden,
+                                onNavbarHiddenToggle = onNavbarHiddenToggle,
+                                debugEnabled = debugEnabled,
+                                onDebugToggle = onDebugToggle,
+                                hardware = modemState?.hardware,
+                                visibleGsmBands = visibleGsmBands,
+                                visibleWcdmaBands = visibleWcdmaBands,
+                                visibleLteBands = visibleLteBands,
+                                visibleNrSaBands = visibleNrSaBands,
+                                visibleNrNsaBands = visibleNrNsaBands,
+                                onBandVisibilitySave = onBandVisibilitySave
+                            )
+                        }
+                        if (isLoading && page != 0 &&
+                            !pagerState.isScrollInProgress
+                        ) {
+                            Surface(modifier = Modifier.fillMaxSize()) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-    }
 
-    if (showRootDeniedDialog) {
-        AlertDialog(
-            onDismissRequest = onDismissRootDialog,
-            title = { Text("Root access required") },
-            text = { Text("Grant root access so Shannon Band Menu can communicate with the modem.") },
-            confirmButton = { TextButton(onClick = onRootRetry) { Text("Retry") } },
-            dismissButton = { TextButton(onClick = onDismissRootDialog) { Text("Close") } }
-        )
-    }
+        if (showRootDeniedDialog) {
+            AlertDialog(
+                onDismissRequest = onDismissRootDialog,
+                title = { Text("Root access required") },
+                text = { Text("Grant root access so Shannon Band Menu can communicate with the modem.") },
+                confirmButton = { TextButton(onClick = onRootRetry) { Text("Retry") } },
+                dismissButton = { TextButton(onClick = onDismissRootDialog) { Text("Close") } }
+            )
+        }
 
-    if (showErrorDialog) {
-        AlertDialog(
-            onDismissRequest = onDismissErrorDialog,
-            title = { Text(errorDialogTitle) },
-            text = { Text(errorDialogMessage) },
-            confirmButton = { TextButton(onClick = onDismissErrorDialog) { Text("OK") } }
-        )
+        if (showErrorDialog) {
+            AlertDialog(
+                onDismissRequest = onDismissErrorDialog,
+                title = { Text(errorDialogTitle) },
+                text = { Text(errorDialogMessage) },
+                confirmButton = { TextButton(onClick = onDismissErrorDialog) { Text("OK") } }
+            )
+        }
     }
 }

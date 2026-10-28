@@ -47,6 +47,11 @@ static void clear_cell(Cell *c) {
         c->chain_rsrp[j] = c->chain_rsrq[j] = c->chain_sinr[j] = NAN;
 }
 static void clear_accum(Telemetry *s) {
+    Wcdma *w = &s->wcdma;
+    w->dl_sum = w->ul_sum = 0;
+    w->dl_reports = w->ul_reports = 0;
+    memset(w->modulation, 0, sizeof(w->modulation));
+    w->cqi_weight = w->cqi_samples = w->scch_attempts = w->scch_valid = 0;
     memset(s->accum, 0, sizeof(s->accum));
     for (int i = 0; i < NR_CELLS; i++)
         s->accum[i].mcs_max = -1;
@@ -56,6 +61,10 @@ static void clear_accum(Telemetry *s) {
 void telemetry_init(Telemetry *s, snapshot_fn fn, void *opaque) {
     shannon_rrc_reset();
     memset(s, 0, sizeof(*s));
+    s->wcdma.measured_us = s->wcdma.signal_us = -1;
+    s->wcdma.psc = s->wcdma.rscp = s->wcdma.ecno = NAN;
+    s->wcdma.dl_mbps = s->wcdma.ul_mbps = s->wcdma.cqi = s->wcdma.scch_pct = NAN;
+    for (int i = 0; i < 3; i++) s->wcdma.modulation_pct[i] = NAN;
     for (int i = 0; i < LTE_CELLS; i++)
         clear_cell(&s->lte[i]);
     for (int i = 0; i < NR_CELLS; i++)
@@ -71,6 +80,14 @@ void telemetry_init(Telemetry *s, snapshot_fn fn, void *opaque) {
     clear_accum(s);
 }
 static void finish(Telemetry *s, int64_t second) {
+    Wcdma *w = &s->wcdma;
+    w->dl_mbps = w->dl_reports ? w->dl_sum / w->dl_reports : NAN;
+    w->ul_mbps = w->ul_reports ? w->ul_sum / w->ul_reports : NAN;
+    uint64_t mod_total = w->modulation[0] + w->modulation[1] + w->modulation[2];
+    for (int i = 0; i < 3; i++)
+        w->modulation_pct[i] = mod_total ? 100.0 * w->modulation[i] / mod_total : NAN;
+    w->cqi = w->cqi_samples ? (double)w->cqi_weight / w->cqi_samples : NAN;
+    w->scch_pct = w->scch_attempts ? 100.0 * w->scch_valid / w->scch_attempts : NAN;
     uint64_t total = 0, ul = 0;
     for (int i = 0; i < NR_CELLS; i++) {
         Accum *a = &s->accum[i];
@@ -515,6 +532,48 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
     }
     return 0;
 }
+/* ICD 9 HSPA single-carrier formats, checked against the HSPA+ NSG export.
+ * Byte counts are interval totals, not cumulative counters. */
+static int decode_wcdma(Telemetry *s, unsigned msg, const uint8_t *p, size_t n) {
+    Wcdma *w = &s->wcdma;
+    if (msg == 0x1504) {
+        if (n < 244 || p[4] != 1 || read_u16(p + 14) != 100) return 0;
+        unsigned valid = read_u16(p + 16);
+        if (valid > 100) return -1;
+        w->dl_sum += read_u32(p) * 40.0 / 1e6; /* 200 ms = 100 two-ms TTIs. */
+        w->dl_reports++;
+        for (int i = 0; i < 3; i++) w->modulation[i] += read_u16(p + 8 + i * 2);
+        w->scch_attempts += 100;
+        w->scch_valid += valid;
+        for (unsigned cqi = 0; cqi <= 30; cqi++) {
+            const uint8_t *entry = p + 20 + cqi * 6;
+            unsigned count = read_u16(entry) + read_u16(entry + 2) + read_u16(entry + 4);
+            w->cqi_weight += cqi * count;
+            w->cqi_samples += count;
+        }
+        w->measured_us = s->now_us;
+        return 1;
+    }
+    if (msg == 0x3504) {
+        if (n < 56 || read_u32(p) != 1000) return 0;
+        w->ul_sum += read_u32(p + 4) * 8.0 / 1e6;
+        w->ul_reports++;
+        w->measured_us = s->now_us;
+        return 1;
+    }
+    if (msg == 0x1b04 && n == 10) {
+        unsigned psc = read_u16(p);
+        int rscp = i16(p + 2), ecno = i16(p + 6);
+        if (psc > 511 || rscp < -120 || rscp > -20 || ecno < -24 || ecno > 0) return 0;
+        w->psc = psc;
+        w->rscp = rscp;
+        w->ecno = ecno;
+        w->signal_us = w->measured_us = s->now_us;
+        return 1;
+    }
+    return 0;
+}
+
 void telemetry_decode(Telemetry *s, int64_t us, unsigned icd, unsigned msg, unsigned stack,
                       const uint8_t *p, size_t n) {
     s->frames++;
@@ -534,6 +593,11 @@ void telemetry_decode(Telemetry *s, int64_t us, unsigned icd, unsigned msg, unsi
         result = decode_lte(s, p, n);
     else if (msg == 0xf101 && n >= 4)
         result = decode_nr(s, stack, read_u32(p) & 65535, p + 4, n - 4);
+    /* Raw device frames have no ICD envelope. They must pass the same
+     * captured layout signatures as ICD-9 replay records. */
+    else if ((icd == 0 || icd == 900) && (((msg == 0x1504 || msg == 0x1b04) && stack == 1) ||
+                            (msg == 0x3504 && stack == 0)))
+        result = decode_wcdma(s, msg, p, n);
     else
         result = lte_aux(s, msg, p, n);
     if (result > 0)
@@ -634,13 +698,14 @@ void telemetry_json(Telemetry *s, int64_t sec, void *opaque) {
     FILE *f = opaque ? opaque : stdout;
     int64_t now = (sec + 1) * 1000000 - 1;
     int lte = recent(now, s->last_lte_us), nr = recent(now, s->last_nr_us);
+    int umts = recent(now, s->wcdma.measured_us) && !lte && !nr;
     fprintf(f,
             "{\"schema\":1,\"window_s\":%" PRId64 ",\"rat\":\"%s\",\"frames\":%" PRIu64
             ",\"decoded\":%" PRIu64 ",\"unsupported\":%" PRIu64 ",\"malformed\":%" PRIu64
             ",\"late\":%" PRIu64 ",\"framing_errors\":%" PRIu64
             ",\"rrc_messages\":%" PRIu64 ",\"rrc_decoded\":%" PRIu64
             ",\"rrc_malformed\":%" PRIu64 ",\"lte\":{",
-            sec - s->origin, nr ? (lte ? "NSA" : "SA") : (lte ? "LTE" : "idle"), s->frames,
+            sec - s->origin, nr ? (lte ? "NSA" : "SA") : (lte ? "LTE" : umts ? "WCDMA" : "idle"), s->frames,
             s->decoded, s->unsupported, s->malformed, s->late, s->framing_errors,
             s->rrc_messages, s->rrc_decoded, s->rrc_malformed);
     number(f, "dl_mbps", lte ? s->lte_dl : NAN, 0);
@@ -659,6 +724,19 @@ void telemetry_json(Telemetry *s, int64_t sec, void *opaque) {
     }
     fputs(",\"cells\":", f);
     cells(f, s->nr, NR_CELLS, now, 1);
+    fputs("},\"wcdma\":{", f);
+    Wcdma *w = &s->wcdma;
+    int signal = umts && recent(now, w->signal_us);
+    number(f, "dl_mbps", umts ? w->dl_mbps : NAN, 0);
+    number(f, "ul_mbps", umts ? w->ul_mbps : NAN, 1);
+    number(f, "psc", signal ? w->psc : NAN, 1);
+    number(f, "cpich_rscp_dbm", signal ? w->rscp : NAN, 1);
+    number(f, "cpich_ecno_db", signal ? w->ecno : NAN, 1);
+    number(f, "cqi", umts ? w->cqi : NAN, 1);
+    number(f, "qpsk_pct", umts ? w->modulation_pct[0] : NAN, 1);
+    number(f, "qam16_pct", umts ? w->modulation_pct[1] : NAN, 1);
+    number(f, "qam64_pct", umts ? w->modulation_pct[2] : NAN, 1);
+    number(f, "hs_scch_success_pct", umts ? w->scch_pct : NAN, 1);
     fputs("}}\n", f);
     if (fflush(f) == EOF) { /* caller checks stdout failure and exits cleanly */
     }

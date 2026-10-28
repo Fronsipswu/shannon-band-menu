@@ -318,6 +318,9 @@ fun NetworkInfoScreen(
                             if (nr.isNotEmpty()) item(key = "diag-nr-$id") {
                                 DiagCarrierCard("NR aggregation", nr)
                             }
+                            subscriptionDiag?.wcdma?.let { measurements ->
+                                item(key = "diag-wcdma-$id") { WcdmaDiagCard(measurements) }
+                            }
                             item(key = "throughput-$id") {
                                 DiagTitle("Throughput")
                                 ThroughputCard(displayedPoints, displayedAtMillis)
@@ -649,6 +652,28 @@ private fun CellSection(title: String, cell: NetworkCell, showNrNsaMetrics: Bool
     }
 }
 
+@Composable
+private fun WcdmaDiagCard(data: fronsipswu.shannonbandmenu.diag.WcdmaSnapshot) {
+    fun value(number: Double?, unit: String = "") = number?.let {
+        String.format(java.util.Locale.US, "%.1f%s", it, unit)
+    } ?: "—"
+    SectionTitle("HSPA DIAG")
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            FieldGrid(listOf(
+                Field("PSC", data.psc?.toString() ?: "—"),
+                Field("CPICH RSCP", value(data.rscp, " dBm")),
+                Field("CPICH Ec/No", value(data.ecno, " dB")),
+                Field("CQI (weighted)", value(data.cqi)),
+                Field("HS-SCCH success", value(data.scchSuccess, "%")),
+                Field("QPSK usage", value(data.qpsk, "%")),
+                Field("16QAM usage", value(data.qam16, "%")),
+                Field("64QAM usage", value(data.qam64, "%"))
+            ))
+        }
+    }
+}
+
 /**
  * Compact three-column label/value grid. A field spans 1, 2 or 3 columns by
  * value length (ECI, DL/UL and the like need more), packed in order. An
@@ -948,6 +973,10 @@ private fun cellMetrics(cell: NetworkCell, showNrNsaMetrics: Boolean): List<BarM
             add(BarMetric("SS-RSRQ", SignalMetric.RSRQ, cell.rsrq, "dB"))
             if (showNrNsaMetrics) add(BarMetric("SS-SINR", SignalMetric.SINR, cell.sinr, "dB"))
         }
+        "WCDMA" -> listOf(
+            BarMetric("RSCP", SignalMetric.RSCP, cell.rsrp, "dBm"),
+            BarMetric("EC/No", SignalMetric.ECNO, cell.sinr, "dB")
+        )
         else -> emptyList()
     }
 
@@ -1011,10 +1040,6 @@ private fun MutableList<Field>.addLegacyFields(cell: NetworkCell) {
         add(Field(label, it.toString()))
     }
     when (cell.technology) {
-        "WCDMA" -> {
-            cell.rsrp?.let { add(Field("RSCP", "$it dBm")) }
-            cell.sinr?.let { add(Field("Ec/No", "$it dB")) }
-        }
         "TD-SCDMA" -> cell.rsrp?.let { add(Field("RSCP", "$it dBm")) }
         "GSM" -> {
             cell.rssi?.let { add(Field("RSSI", "$it dBm")) }

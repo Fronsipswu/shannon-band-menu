@@ -39,8 +39,17 @@ typedef struct {
 } Channel;
 
 typedef struct Telemetry Telemetry;
+typedef struct {
+    int64_t measured_us, signal_us;
+    double psc, rscp, ecno;
+    double dl_sum, ul_sum, dl_mbps, ul_mbps;
+    unsigned dl_reports, ul_reports;
+    uint64_t modulation[3], cqi_weight, cqi_samples, scch_attempts, scch_valid;
+    double modulation_pct[3], cqi, scch_pct;
+} Wcdma;
 typedef void (*snapshot_fn)(Telemetry *, int64_t, void *);
 struct Telemetry {
+    Wcdma wcdma;
     Cell lte[LTE_CELLS], nr[NR_CELLS];
     Accum accum[NR_CELLS];
     Channel channels[CHANNELS];
