@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -117,6 +117,16 @@ fun NetworkInfoScreen(
     fun toggleFrozen() {
         haptic.performHapticFeedback(HapticFeedbackType.Confirm)
         monitoringFrozen = !monitoringFrozen
+    }
+
+    fun toggleTrafficTest() {
+        if (trafficTest.run.value.running) trafficTest.stop()
+        else if (!trafficTest.start()) showTestSetup = true
+    }
+    val doubleTapAction by rememberUpdatedState { toggleFrozen() }
+    val tripleTapAction by rememberUpdatedState {
+        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        toggleTrafficTest()
     }
 
     fun extendReplay() {
@@ -196,7 +206,7 @@ fun NetworkInfoScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { toggleFrozen() })
+                    detectNetworkTaps(onDoubleTap = { doubleTapAction() }, onTripleTap = { tripleTapAction() })
                 },
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -280,10 +290,7 @@ fun NetworkInfoScreen(
                                 onDiagToggle = { diagMonitor.setEnabled(!diagState.enabled) },
                                 testRun = testRun,
                                 onTestSetup = { showTestSetup = true },
-                                onTestToggle = {
-                                    if (testRun.running) trafficTest.stop()
-                                    else if (!trafficTest.start()) showTestSetup = true
-                                },
+                                onTestToggle = ::toggleTrafficTest,
                                 diagStatus = if (subscription === current.subscriptions.first() && shownDiag.enabled) {
                                     when {
                                         shownDiag.starting -> "DIAG · Connecting"
