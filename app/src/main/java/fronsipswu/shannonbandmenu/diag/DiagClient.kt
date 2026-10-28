@@ -15,7 +15,7 @@ import java.io.IOException
 /** One app's native stats helper; it never starts/stops the optional broker. */
 class DiagClient(private val context: Context) {
     companion object {
-        const val VERSION = "0.4.4"
+        const val VERSION = "0.4.6"
         private const val BINARY = "sbm-diagd"
     }
 
@@ -63,11 +63,9 @@ class DiagClient(private val context: Context) {
         repeat(24) {
             Thread.sleep(250)
             if (connect()) return
-            if (stderr.exists() && stderr.length() > 0) {
-                throw IOException(stderr.readText().take(1500).trim())
-            }
         }
-        throw IOException("Cannot connect to the DIAG helper")
+        throw IOException(stderr.takeIf(File::exists)?.readText()?.take(1500)?.trim()
+            .orEmpty().ifEmpty { "Cannot connect to the DIAG helper" })
     }
 
     private fun connect(): Boolean {

@@ -188,6 +188,7 @@ fun NetworkInfoScreen(
         replayModel.refresh()
     }
 
+    DiagConnectionWarning(diagState.enabled, diagState.reading)
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding).statusBarsPadding()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -579,11 +580,17 @@ private fun SummaryCard(
 @Composable
 private fun DiagOverflowMenu(enabled: Boolean, onToggle: () -> Unit, onTestSetup: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var showRelayTimer by remember { mutableStateOf(false) }
+    if (showRelayTimer) RelayIdleTimerDialog { showRelayTimer = false }
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(Icons.Outlined.MoreVert, contentDescription = "Network options")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Relay idle timer") },
+                onClick = { expanded = false; showRelayTimer = true }
+            )
             DropdownMenuItem(
                 text = { Text("Enable DIAG") },
                 trailingIcon = { if (enabled) Icon(Icons.Outlined.Check, contentDescription = null) },

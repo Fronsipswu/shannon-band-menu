@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.4.4"
+#define VERSION "0.4.6"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {
@@ -351,6 +351,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     int fd = -1;
+    char direct_session[128] = "null";
     if (!strcmp(mode, "auto") || !strcmp(mode, "broker")) {
         int result = broker_begin(control_path, &control_fd, &fd);
         if (result < 0 || (result > 0 && !strcmp(mode, "broker"))) {
@@ -367,10 +368,6 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(mode, "device")) {
         int pid = busy_owner(path);
-        if (pid) {
-            fprintf(stderr, "DM device busy/unknown (owner=%d). No modem writes performed.\n", pid);
-            return 3;
-        }
         if (init) {
             direct_lock = open("/data/local/tmp/sbm-diag-direct.lock",
                                O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
@@ -384,13 +381,13 @@ int main(int argc, char **argv) {
             }
         }
         fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
-        if (fd >= 0 && (pid = busy_owner(path)) != 0) {
-            fprintf(stderr, "DM ownership changed/unknown (owner=%d). No modem writes performed.\n",
-                    pid);
-            close(fd);
-            if (direct_lock >= 0)
-                close(direct_lock);
-            return 3;
+        if (fd >= 0) {
+            int after = busy_owner(path);
+            if (after != 0) pid = after;
+            snprintf(direct_session, sizeof(direct_session),
+                     "{\"other_client_present\":%s,\"ownership_unknown\":%s}",
+                     pid > 0 ? "true" : pid < 0 ? "null" : "false",
+                     pid < 0 ? "true" : "false");
         }
     } else if (!strcmp(mode, "socket"))
         fd = connect_socket(path);
@@ -403,7 +400,7 @@ int main(int argc, char **argv) {
     Telemetry state;
     if (app_uid >= 0) {
         metrics.transport = !strcmp(mode, "broker") ? "broker" : "direct";
-        metrics.session = !strcmp(mode, "broker") ? broker_session : "null";
+        metrics.session = !strcmp(mode, "broker") ? broker_session : direct_session;
         metrics.last_request = monotonic_us();
         telemetry_init(&state, metrics_publish, &metrics);
     } else
@@ -421,8 +418,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (init) {
-        puts("{\"type\":\"session\",\"transport\":\"direct\",\"state\":{\"stream\":\"starting\","
-             "\"other_client_present\":false}}");
+        printf("{\"type\":\"session\",\"transport\":\"direct\",\"state\":%s}\n", direct_session);
         fflush(stdout);
     }
     Framer framer = {0};
@@ -474,7 +470,13 @@ int main(int argc, char **argv) {
             ssize_t n = read(fd, buf, sizeof(buf));
             if (n > 0)
                 feed(&state, &framer, buf, (size_t)n, monotonic_us());
-            else if (!n) {
+            else if (!n && !strcmp(mode, "device") && !(pfd.revents & POLLHUP)) {
+                /* CPIF may return zero while RX is idle. Only stream/file
+                 * transports use zero as EOF; keep the app session alive.
+                 * Bound retries when a driver repeatedly advertises POLLIN. */
+                struct timespec pause = {0, 10000000};
+                nanosleep(&pause, NULL);
+            } else if (!n) {
                 fprintf(stderr, "DM input closed (%s).\n", mode);
                 if (app_uid >= 0 && !strcmp(mode, "broker") && !stopping) {
                     int64_t now = monotonic_us();
