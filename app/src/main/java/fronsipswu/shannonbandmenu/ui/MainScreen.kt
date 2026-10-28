@@ -84,6 +84,7 @@ fun MainScreen(
     visibleNrNsaBands: Set<Int>? = null,
     onBandVisibilitySave: (Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?, Set<Int>?) -> Unit = { _, _, _, _, _ -> }
 ) {
+    ForegroundNetworkMonitoring()
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
     val pagerScope = rememberCoroutineScope()
 
@@ -170,8 +171,7 @@ fun MainScreen(
             ) { page ->
                 if (page == 0) {
                     NetworkInfoScreen(
-                        // A gesture can mark the pager scrolling even when the
-                        // Network tab stays selected. Keep its DIAG session alive.
+                        // Selection only controls replay playback, never collection.
                         isActive = pagerState.settledPage == 0,
                         contentPadding = contentPadding
                     )

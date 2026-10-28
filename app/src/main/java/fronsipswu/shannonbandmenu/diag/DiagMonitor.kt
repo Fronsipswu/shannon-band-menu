@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-/** Monitoring follows page/activity visibility; freeze affects presentation only. */
+/** Monitoring follows app visibility; tab selection and freeze affect presentation only. */
 class DiagMonitor(application: Application) : AndroidViewModel(application) {
     data class State(
         val enabled: Boolean = false,
@@ -51,7 +51,7 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
     private fun reschedule() {
         sessions.replace {
             if (!active || !mutableState.value.enabled) {
-                mutableState.update { it.copy(reading = null, starting = false) }
+                mutableState.update { it.copy(starting = false) }
                 return@replace
             }
             val client = DiagClient(getApplication())

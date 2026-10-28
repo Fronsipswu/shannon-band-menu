@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +50,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,7 +58,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -68,16 +71,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fronsipswu.shannonbandmenu.diag.DiagMonitor
-import fronsipswu.shannonbandmenu.diag.DiagClient
 import fronsipswu.shannonbandmenu.diag.DiagSnapshot
-import fronsipswu.shannonbandmenu.diag.ThputPoint
-import fronsipswu.shannonbandmenu.diag.diagSubscription
 import fronsipswu.shannonbandmenu.diag.diagServingCell
-import fronsipswu.shannonbandmenu.diag.diagDisplayCarriers
-import fronsipswu.shannonbandmenu.diag.diagDisplayOwner
 import fronsipswu.shannonbandmenu.NetworkCell
 import fronsipswu.shannonbandmenu.NetworkCellRole
-import fronsipswu.shannonbandmenu.NetworkInfoSnapshot
 import fronsipswu.shannonbandmenu.NetworkInfoSource
 import fronsipswu.shannonbandmenu.NetworkSubscription
 import fronsipswu.shannonbandmenu.R
@@ -85,11 +82,10 @@ import fronsipswu.shannonbandmenu.isNrNsa
 import fronsipswu.shannonbandmenu.lteFrequenciesForEarfcn
 import fronsipswu.shannonbandmenu.nrFrequencyForArfcn
 import fronsipswu.shannonbandmenu.network.TrafficTest
-import kotlinx.coroutines.Dispatchers
+import fronsipswu.shannonbandmenu.network.NetworkReplayFrame
+import fronsipswu.shannonbandmenu.network.NetworkReplayModel
+import fronsipswu.shannonbandmenu.network.replayThroughput
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,51 +95,76 @@ fun NetworkInfoScreen(
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val source = remember(context) { NetworkInfoSource(context.applicationContext) }
-    val scope = rememberCoroutineScope()
     val trafficTest = remember(context) { TrafficTest.get(context) }
     val testConfig by trafficTest.config.collectAsState()
     val testRun by trafficTest.run.collectAsState()
     var showTestSetup by rememberSaveable { mutableStateOf(false) }
     var permissionRevision by remember { mutableIntStateOf(0) }
-    var snapshot by remember { mutableStateOf<NetworkInfoSnapshot?>(null) }
-    var isRefreshing by remember { mutableStateOf(false) }
     var monitoringFrozen by rememberSaveable { mutableStateOf(false) }
     val activity = context as ComponentActivity
     val diagMonitor = remember(activity) { ViewModelProvider(activity)[DiagMonitor::class.java] }
     val diagState by diagMonitor.state.collectAsState()
-    var displayedDiag by remember { mutableStateOf<DiagClient.Reading?>(null) }
-    var displayedPoints by remember { mutableStateOf<List<ThputPoint>>(emptyList()) }
-    var displayedAtMillis by remember { mutableStateOf(0L) }
-    var previousDiagOwner by remember { mutableStateOf<Int?>(null) }
+    val replayModel = remember(activity) { ViewModelProvider(activity)[NetworkReplayModel::class.java] }
+    val liveFrame by replayModel.liveFrame.collectAsState()
+    val isRefreshing by replayModel.refreshing.collectAsState()
+    var replayFrames by remember { mutableStateOf<List<NetworkReplayFrame>>(emptyList()) }
+    var replayPosition by remember { mutableIntStateOf(0) }
+    var replayPlaying by remember { mutableStateOf(false) }
+    var pageVisible by remember { mutableStateOf(false) }
 
-    val matchedDiagOwner = displayedDiag?.snapshot?.let { data ->
-        snapshot?.let { diagSubscription(data, it.subscriptions) }
-    }
-    LaunchedEffect(matchedDiagOwner, diagState.enabled) {
-        if (!diagState.enabled) previousDiagOwner = null
-        else if (matchedDiagOwner != null) previousDiagOwner = matchedDiagOwner
+    fun toggleFrozen() {
+        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        monitoringFrozen = !monitoringFrozen
     }
 
-    LaunchedEffect(diagState, monitoringFrozen) {
-        if (!monitoringFrozen || !diagState.enabled) {
-            displayedDiag = diagState.reading
-            displayedPoints = diagState.points
-            displayedAtMillis = diagState.sampledAtMillis
+    fun extendReplay() {
+        val selectedTime = replayFrames.getOrNull(replayPosition)?.elapsedMillis ?: return
+        val fresh = replayModel.open()
+        if (fresh.isEmpty()) return
+        replayPosition = fresh.indexOfLast { it.elapsedMillis <= selectedTime }.coerceAtLeast(0)
+        replayFrames = fresh
+    }
+
+    LaunchedEffect(monitoringFrozen) {
+        replayPlaying = false
+        replayFrames = if (monitoringFrozen) replayModel.open() else emptyList()
+        replayPosition = (replayFrames.size - 1).coerceAtLeast(0)
+    }
+    LaunchedEffect(replayPlaying, pageVisible) {
+        if (!pageVisible) replayPlaying = false
+        while (replayPlaying && replayPosition < replayFrames.lastIndex) {
+            val index = replayPosition
+            delay((replayFrames[index + 1].elapsedMillis - replayFrames[index].elapsedMillis).coerceAtLeast(1))
+            replayPosition = index + 1
         }
+        replayPlaying = false
     }
+    val shownFrame = if (monitoringFrozen) replayFrames.getOrNull(replayPosition) ?: liveFrame else liveFrame
+    val snapshot = shownFrame?.network
+    val shownDiag = shownFrame?.diag ?: diagState
+    val displayedDiag = shownDiag.reading
+    val displayedAtMillis = shownDiag.sampledAtMillis
+    val timelinePoints = remember(replayFrames) { replayThroughput(replayFrames) }
+    val displayedPoints = remember(monitoringFrozen, timelinePoints, displayedAtMillis, shownDiag.points) {
+        if (monitoringFrozen && replayFrames.isNotEmpty()) timelinePoints.filter {
+            it.t in displayedAtMillis - THPUT_BEFORE_MS..displayedAtMillis + THPUT_AFTER_MS
+        } else shownDiag.points
+    }
+    val matchedDiagOwner = shownFrame?.matchedOwner
+
     DisposableEffect(activity, isActive) {
-        fun updateActivity() = diagMonitor.setActive(
-            // Quick Settings may pause the activity while it remains visible.
-            // Keep receiving configuration emitted during an airplane-mode toggle.
-            isActive && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-        )
+        fun updateActivity() {
+            // Only replay playback depends on whether this page is selected.
+            pageVisible = isActive && activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        }
         val observer = LifecycleEventObserver { _, _ -> updateActivity() }
         activity.lifecycle.addObserver(observer)
         updateActivity()
         onDispose {
             activity.lifecycle.removeObserver(observer)
-            diagMonitor.setActive(false)
+            pageVisible = false
         }
     }
 
@@ -152,6 +173,7 @@ fun NetworkInfoScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
         permissionRevision++
+        replayModel.refresh()
     }
 
     val phonePermissionGranted = remember(permissionRevision) {
@@ -161,50 +183,21 @@ fun NetworkInfoScreen(
         source.hasFineLocationPermission()
     }
 
-    suspend fun readSnapshot(): NetworkInfoSnapshot =
-        withContext(Dispatchers.IO) { source.readSnapshot() }
-
     fun refresh() {
         if (monitoringFrozen || isRefreshing) return
-        scope.launch {
-            isRefreshing = true
-            try {
-                if (fineLocationGranted) {
-                    withContext(Dispatchers.IO) { source.requestFreshCellInfo() }
-                }
-                val refreshed = readSnapshot()
-                if (!monitoringFrozen) snapshot = refreshed
-            } finally {
-                isRefreshing = false
-            }
-        }
-    }
-
-    LaunchedEffect(
-        isActive,
-        monitoringFrozen,
-        phonePermissionGranted,
-        fineLocationGranted,
-        permissionRevision
-    ) {
-        if (!isActive || monitoringFrozen || !phonePermissionGranted) return@LaunchedEffect
-        while (isActive) {
-            if (fineLocationGranted) {
-                withContext(Dispatchers.IO) { source.requestFreshCellInfo() }
-            }
-            snapshot = readSnapshot()
-            delay(1_000)
-        }
+        replayModel.refresh()
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding).statusBarsPadding()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = ::refresh,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.weight(1f)
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { toggleFrozen() })
+                },
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -226,14 +219,12 @@ fun NetworkInfoScreen(
                     }
                 }
 
-                diagState.error?.let { message ->
+                shownDiag.error?.let { message ->
                     item(key = "diag-error") { NoticeCard("DIAG stopped: $message", isError = true) }
                 }
                 val current = snapshot
-                val diag = displayedDiag?.snapshot.takeIf { diagState.enabled }
-                val diagOwner = current?.let {
-                    diagDisplayOwner(matchedDiagOwner, previousDiagOwner, it.subscriptions)
-                }
+                val diag = displayedDiag?.snapshot.takeIf { shownDiag.enabled }
+                val diagOwner = shownFrame?.displayOwner
 
                 if (phonePermissionGranted && current == null) {
                     item {
@@ -265,11 +256,9 @@ fun NetworkInfoScreen(
                             it.role == NetworkCellRole.PRIMARY
                         }
                         // Layout follows the selected mode, never a transient sample's availability.
-                        val usesDiag = diagState.enabled && diagOwner == id
+                        val usesDiag = shownDiag.enabled && diagOwner == id
                         val subscriptionDiag = diag.takeIf { matchedDiagOwner == id }
-                        val diagCarriers = if (usesDiag)
-                            diagMonitor.holdPorts(id, diagDisplayCarriers(subscription, subscriptionDiag))
-                            else emptyList()
+                        val diagCarriers = shownFrame.carriers[id].orEmpty()
                         val nrNsa = subscriptionDiag?.rat?.let { it == "NSA" } ?: isNrNsa(subscription.cells)
                         val diagPrimaries = primaryCells.map { diagServingCell(it, subscriptionDiag) }
 
@@ -285,7 +274,7 @@ fun NetworkInfoScreen(
                             SummaryCard(
                                 subscription, diagPrimaries.firstOrNull(), nrNsa,
                                 frozen = monitoringFrozen.takeIf { subscription === current.subscriptions.first() },
-                                onFrozenToggle = { monitoringFrozen = !monitoringFrozen },
+                                onFrozenToggle = ::toggleFrozen,
                                 diagEnabled = diagState.enabled,
                                 onDiagToggle = { diagMonitor.setEnabled(!diagState.enabled) },
                                 testRun = testRun,
@@ -294,9 +283,9 @@ fun NetworkInfoScreen(
                                     if (testRun.running) trafficTest.stop()
                                     else if (!trafficTest.start()) showTestSetup = true
                                 },
-                                diagStatus = if (subscription === current.subscriptions.first() && diagState.enabled) {
+                                diagStatus = if (subscription === current.subscriptions.first() && shownDiag.enabled) {
                                     when {
-                                        diagState.starting -> "DIAG · Connecting"
+                                        shownDiag.starting -> "DIAG · Connecting"
                                         diagOwner == null -> "DIAG · Waiting for serving cell"
                                         displayedDiag?.transport == "broker" -> "DIAG (relay)"
                                         else -> "DIAG · Direct"
@@ -342,7 +331,7 @@ fun NetworkInfoScreen(
                         } else {
                             carrierGroups(subscription, nrNsa).forEach { group ->
                                 item(key = "carriers-$id-${group.title}") {
-                                    CarrierSection(group, diagEnabled = diagState.enabled)
+                                    CarrierSection(group, diagEnabled = shownDiag.enabled)
                                 }
                             }
                         }
@@ -364,6 +353,27 @@ fun NetworkInfoScreen(
                     }
                 }
             }
+        }
+        if (monitoringFrozen && replayFrames.isNotEmpty()) {
+            NetworkReplayBar(
+                size = replayFrames.size,
+                position = replayPosition,
+                wallMillis = replayFrames[replayPosition].network.capturedAtMillis,
+                playing = replayPlaying,
+                onPosition = {
+                    replayPlaying = false
+                    replayPosition = it.coerceIn(0, replayFrames.lastIndex)
+                },
+                onPlay = {
+                    if (!replayPlaying && replayPosition == replayFrames.lastIndex) replayPosition = 0
+                    replayPlaying = !replayPlaying
+                },
+                onDragStart = {
+                    replayPlaying = false
+                    extendReplay()
+                },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
     }
     TestScriptDialog(
