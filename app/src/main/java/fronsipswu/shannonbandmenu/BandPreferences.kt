@@ -30,6 +30,7 @@ object BandPreferences {
     private val DEBUG_LOGGING = booleanPreferencesKey("debug_logging")
     private val QUICK_SELECT_HIDDEN = booleanPreferencesKey("quick_select_hidden")
     private val NR_MODE_HIDDEN = booleanPreferencesKey("nr_mode_hidden")
+    private val NAVBAR_HIDDEN = booleanPreferencesKey("navbar_hidden")
     private val NR_INDEPENDENT_SUPPORTED = booleanPreferencesKey("nr_independent_supported")
     private val VISIBLE_GSM_BANDS = stringSetPreferencesKey("visible_gsm_bands")
     private val VISIBLE_WCDMA_BANDS = stringSetPreferencesKey("visible_wcdma_bands")
@@ -125,6 +126,13 @@ object BandPreferences {
 
     suspend fun setQuickSelectHidden(dataStore: DataStore<Preferences>, hidden: Boolean) {
         dataStore.edit { it[QUICK_SELECT_HIDDEN] = hidden }
+    }
+
+    fun getNavbarHidden(dataStore: DataStore<Preferences>): Flow<Boolean> =
+        dataStore.data.map { it[NAVBAR_HIDDEN] ?: false }
+
+    suspend fun setNavbarHidden(dataStore: DataStore<Preferences>, hidden: Boolean) {
+        dataStore.edit { it[NAVBAR_HIDDEN] = hidden }
     }
 
     fun getNrModeHidden(dataStore: DataStore<Preferences>): Flow<Boolean> =

@@ -188,7 +188,6 @@ fun NetworkInfoScreen(
         replayModel.refresh()
     }
 
-    DiagConnectionWarning(diagState.enabled, diagState.reading)
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding).statusBarsPadding()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -290,7 +289,7 @@ fun NetworkInfoScreen(
                                         shownDiag.starting -> "DIAG · Connecting"
                                         diagOwner == null -> "DIAG · Waiting for serving cell"
                                         displayedDiag?.transport == "broker" -> "DIAG (relay)"
-                                        else -> "DIAG · Direct"
+                                        else -> "DIAG (Direct)"
                                     }
                                 } else null
                             )

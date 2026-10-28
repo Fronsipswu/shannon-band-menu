@@ -24,7 +24,9 @@ internal fun AppOverflowMenu(
     quickSelectHidden: Boolean = false,
     onToggleQuickSelect: (() -> Unit)? = null,
     nrModeHidden: Boolean = false,
-    onToggleNrMode: (() -> Unit)? = null
+    onToggleNrMode: (() -> Unit)? = null,
+    navbarHidden: Boolean = false,
+    onToggleNavbar: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -47,6 +49,11 @@ internal fun AppOverflowMenu(
             text = { Text("Hide NR mode") },
             trailingIcon = { if (nrModeHidden) Icon(Icons.Outlined.Check, contentDescription = null) },
             onClick = { expanded = false; onToggleNrMode() }
+        )
+        if (onToggleNavbar != null) DropdownMenuItem(
+            text = { Text("Hide navigation bar") },
+            trailingIcon = { if (navbarHidden) Icon(Icons.Outlined.Check, contentDescription = null) },
+            onClick = { expanded = false; onToggleNavbar() }
         )
         if (onToggleQuickSelect != null) DropdownMenuItem(
             text = { Text("Hide quick select") },

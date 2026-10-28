@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
                 var debugEnabled by remember { mutableStateOf(false) }
                 var quickSelectHidden by remember { mutableStateOf(false) }
                 var nrModeHidden by remember { mutableStateOf(false) }
+                var navbarHidden by remember { mutableStateOf(false) }
                 var bandDisplayPreferences by remember { mutableStateOf(BandDisplayPreferences()) }
                 val scope = rememberCoroutineScope()
                 val modemLock = remember { Mutex() }
@@ -112,6 +113,11 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     BandPreferences.getNrModeHidden(bandDataStore).collectLatest {
                         nrModeHidden = it
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    BandPreferences.getNavbarHidden(bandDataStore).collectLatest {
+                        navbarHidden = it
                     }
                 }
 
@@ -992,6 +998,11 @@ class MainActivity : ComponentActivity() {
                         scope.launch { BandPreferences.setQuickSelectHidden(bandDataStore, hidden) }
                     },
                     nrModeHidden = nrModeHidden,
+                    navbarHidden = navbarHidden,
+                    onNavbarHiddenToggle = { hidden ->
+                        navbarHidden = hidden
+                        scope.launch { BandPreferences.setNavbarHidden(bandDataStore, hidden) }
+                    },
                     onToggleNrMode = {
                         val hidden = !nrModeHidden
                         nrModeHidden = hidden

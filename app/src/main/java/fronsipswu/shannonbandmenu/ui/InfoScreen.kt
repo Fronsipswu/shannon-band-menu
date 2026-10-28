@@ -31,6 +31,8 @@ fun InfoScreen(
     contentPadding: PaddingValues = PaddingValues(),
     debugEnabled: Boolean = false,
     onDebugToggle: () -> Unit = {},
+    navbarHidden: Boolean = false,
+    onNavbarHiddenToggle: (Boolean) -> Unit = {},
     hardware: HardwareBands? = null,
     visibleGsmBands: Set<Int>? = null,
     visibleWcdmaBands: Set<Int>? = null,
@@ -68,6 +70,8 @@ fun InfoScreen(
                     settingsEnabled = hardware != null,
                     onSettings = { if (hardware != null) showSettings = true },
                     debugEnabled = debugEnabled,
+                    navbarHidden = navbarHidden,
+                    onToggleNavbar = { onNavbarHiddenToggle(!navbarHidden) },
                     onDebugToggle = onDebugToggle
                 )
             }

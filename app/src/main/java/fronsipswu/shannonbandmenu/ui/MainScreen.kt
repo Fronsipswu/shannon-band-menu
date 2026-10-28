@@ -1,8 +1,11 @@
 package fronsipswu.shannonbandmenu.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -80,6 +83,8 @@ fun MainScreen(
     quickSelectHidden: Boolean = false,
     onToggleQuickSelect: () -> Unit = {},
     nrModeHidden: Boolean = false,
+    navbarHidden: Boolean = false,
+    onNavbarHiddenToggle: (Boolean) -> Unit = {},
     onToggleNrMode: () -> Unit = {},
     visibleGsmBands: Set<Int>? = null,
     visibleWcdmaBands: Set<Int>? = null,
@@ -107,7 +112,7 @@ fun MainScreen(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            NavigationBar {
+            if (!navbarHidden) NavigationBar {
                 NavigationBarItem(
                     selected = pagerState.currentPage == 0,
                     onClick = { selectPage(0) },
@@ -147,6 +152,8 @@ fun MainScreen(
                     icon = { Icon(Icons.Outlined.Info, contentDescription = "Info") },
                     label = { Text("Info") }
                 )
+            } else {
+                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
             }
         },
         snackbarHost = {
@@ -219,6 +226,8 @@ fun MainScreen(
                 } else {
                     InfoScreen(
                         contentPadding = contentPadding,
+                        navbarHidden = navbarHidden,
+                        onNavbarHiddenToggle = onNavbarHiddenToggle,
                         debugEnabled = debugEnabled,
                         onDebugToggle = onDebugToggle,
                         hardware = modemState?.hardware,
