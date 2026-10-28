@@ -267,7 +267,8 @@ fun NetworkInfoScreen(
                         // Layout follows the selected mode, never a transient sample's availability.
                         val usesDiag = diagState.enabled && diagOwner == id
                         val subscriptionDiag = diag.takeIf { matchedDiagOwner == id }
-                        val diagCarriers = if (usesDiag) diagDisplayCarriers(subscription, subscriptionDiag)
+                        val diagCarriers = if (usesDiag)
+                            diagMonitor.holdPorts(id, diagDisplayCarriers(subscription, subscriptionDiag))
                             else emptyList()
                         val nrNsa = subscriptionDiag?.rat?.let { it == "NSA" } ?: isNrNsa(subscription.cells)
                         val diagPrimaries = primaryCells.map { diagServingCell(it, subscriptionDiag) }

@@ -61,6 +61,8 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val bandwidth = value("bandwidth_mhz")
     val scs = value("scs_khz")
     val rx = value("rx")?.toInt()
+    val csiPorts = value("csi_ports")?.toInt()?.takeIf { it in 1..32 }
+    val downlinkScheduled = json.optBoolean("dl_scheduled", false)
     val tx = value("tx")?.toInt()
     val rsrp = value("rsrp_dbm")
     val rsrq = value("rsrq_db")
@@ -92,6 +94,10 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val hasUplink = json.optBoolean("uplink_active", false)
 
     private fun value(name: String) = json.number(name)
+
+    internal fun withCsiPorts(ports: Int?): DiagCarrier =
+        if (ports == csiPorts) this
+        else DiagCarrier(nr, JSONObject(json.toString()).put("csi_ports", ports ?: JSONObject.NULL))
 
     private fun modulation(bits: Double?): String? = when (bits?.toInt()) {
         2 -> "QPSK"

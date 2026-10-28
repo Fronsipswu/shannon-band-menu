@@ -10,6 +10,7 @@
 
 typedef struct {
     int present;
+    int dl_scheduled;
     int64_t measured_us;
     int64_t uplink_us;
     double band, arfcn, pci, bw_mhz, scs_khz, rx, tx;
@@ -23,6 +24,7 @@ typedef struct {
 
 typedef struct {
     uint64_t dl_bits, ul_bits, rb_sum, rb_count, bler_sum, bler_count;
+    uint64_t dl_records;
     int mcs_max, rank_max;
 } Accum;
 
@@ -40,6 +42,7 @@ struct Telemetry {
     Channel channels[CHANNELS];
     int64_t bucket, origin, now_us, last_lte_us, last_nr_us;
     uint64_t frames, decoded, unsupported, malformed, late, framing_errors;
+    uint64_t rrc_messages, rrc_decoded, rrc_malformed;
     uint64_t period_dl_bits;
     int seen_period, ever_dl, ever_ul;
     double phy_dl, phy_ul, lte_dl, lte_ul;

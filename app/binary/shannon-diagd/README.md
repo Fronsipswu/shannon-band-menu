@@ -1,6 +1,6 @@
 # SBM DIAG helper
 
-`sbm-diagd` 0.3.4 is a separate root process from the band-lock daemon and the Android app. It frames Shannon DM packets, decodes the capture-validated LTE/NR layouts, aggregates completed one-second windows, and serves structured metrics to the app. It contains no band-lock, NV or service-menu operations.
+`sbm-diagd` 0.4.0 is a separate root process from the band-lock daemon and the Android app. It frames Shannon DM packets, decodes the capture-validated LTE/NR layouts, aggregates completed one-second windows, and serves structured metrics to the app. It contains no band-lock, NV or service-menu operations.
 
 ## Build
 
@@ -10,7 +10,7 @@ From the Android project directory, with Android NDK installed:
 .\binary\shannon-diagd\build.ps1 -Ndk D:\AndroidSDK\ndk\30.0.16138531
 ```
 
-The script updates `src/main/assets/sbm-diagd`. The asset is included in the repository; Gradle does not compile C. Build it whenever the native source changes. Native `VERSION` and Kotlin `DiagClient.VERSION` must match. The binary is static Android ARM64, API 26+, built with warnings as errors, fortification and stack protection.
+The script updates `src/main/assets/sbm-diagd`. The asset is included in the repository; Gradle does not compile C. Build it whenever the native source changes. Native `VERSION` and Kotlin `DiagClient.VERSION` must match. The binary is static Android ARM64, API 26+, built with fortification, stack protection, LTO and section garbage collection. Handwritten source uses warnings as errors; warnings are suppressed only for the unchanged generated ASN.1 source.
 
 ## App protocol
 
@@ -42,7 +42,9 @@ Owner inspection is best effort; the helper lock cannot exclude unrelated direct
 
 The Kotlin layer parses finite values, preserves nulls/real zeros, and attributes unlabelled modem data only to a uniquely matching subscription (or the sole subscription). Missing samples retain DIAG tables with identity placeholders; previous RF readings are not held as new measurements. API identity/configuration can fill otherwise unknown columns. Switching off DIAG returns to the original API tables.
 
-The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR ports are omitted from the UI. Some fields, including per-chain SINR and NR UL rank/TX mode, are not emitted by the current decoder and display dashes. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
+The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR Port/Rx includes CSI-RS ports from received RRC configuration and the RX count. Some fields, including per-chain SINR and NR UL rank/TX mode, are not emitted by the current decoder and display dashes. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
+
+Version 0.4.0 adds a Shannon NR RRC wrapper and the trimmed ASN.1 CSI consumer, with per-SIM display hold behavior for idle ports. See [RRC decoder notes](rrc/README.md) for supported messages, bounds, state handling and verification limits.
 
 Version 0.3.4 emits per-carrier `uplink_active` from a positive reported UL rate or actual UL RB allocation in the supported grant records, expiring after three seconds without evidence. Uplink tables retain primary carriers and include SCells only while that flag is true. Generic debug MCS/power values and synthesized zero rates do not establish an uplink SCell. This reflects recently observed activity, not a complete RRC uplink-configuration catalogue. NR carriers without their own UL evidence no longer inherit zero UL throughput/PRBs from another carrier.
 

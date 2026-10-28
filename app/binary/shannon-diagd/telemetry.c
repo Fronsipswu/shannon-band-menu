@@ -1,4 +1,5 @@
 #include "telemetry.h"
+#include "rrc/shannon_rrc.h"
 #include <inttypes.h>
 #include <math.h>
 #include <string.h>
@@ -51,6 +52,7 @@ static void clear_accum(Telemetry *s) {
     s->seen_period = 0;
 }
 void telemetry_init(Telemetry *s, snapshot_fn fn, void *opaque) {
+    shannon_rrc_reset();
     memset(s, 0, sizeof(*s));
     for (int i = 0; i < LTE_CELLS; i++)
         clear_cell(&s->lte[i]);
@@ -73,6 +75,7 @@ static void finish(Telemetry *s, int64_t second) {
         Cell *c = &s->nr[i];
         total += a->dl_bits;
         ul += a->ul_bits;
+        c->dl_scheduled = a->dl_records > 0;
         c->phy_dl = s->ever_dl ? a->dl_bits / 1e6 : NAN;
         int uplink = recent((second + 1) * 1000000 - 1, c->uplink_us);
         c->phy_ul = uplink ? a->ul_bits / 1e6 : NAN;
@@ -452,6 +455,8 @@ static int decode_nr(Telemetry *s, unsigned stack, unsigned id, const uint8_t *p
             return 1;
         Accum *a = &s->accum[slot];
         a->dl_bits += read_u32(p + 12);
+        if (read_u32(p + 12) > 0)
+            a->dl_records++;
         a->bler_sum += read_u32(p + 44);
         a->bler_count++;
         unsigned mcs = read_u32(p + 36);
@@ -502,7 +507,9 @@ void telemetry_decode(Telemetry *s, int64_t us, unsigned icd, unsigned msg, unsi
         return;
     }
     int result = 0;
-    if (msg == 0x1902)
+    if (msg == 0x0801)
+        result = shannon_rrc_decode(s, stack, p, n);
+    else if (msg == 0x1902)
         result = decode_lte(s, p, n);
     else if (msg == 0xf101 && n >= 4)
         result = decode_nr(s, stack, read_u32(p) & 65535, p + 4, n - 4);
@@ -546,6 +553,11 @@ static void cells(FILE *f, Cell *cells, int n, int64_t now, int nr) {
                 i ? "scell" : "pcell", recent(now, c->measured_us) ? "true" : "false");
         first = 0;
         fprintf(f, ",\"uplink_active\":%s", recent(now, c->uplink_us) ? "true" : "false");
+        if (nr) {
+            int ports = shannon_rrc_ports(c, i == 0);
+            number(f, "csi_ports", ports ? ports : NAN, 1);
+            fprintf(f, ",\"dl_scheduled\":%s", c->dl_scheduled ? "true" : "false");
+        }
         number(f, "band", c->band, 1);
         number(f, "arfcn", c->arfcn, 1);
         number(f, "pci", c->pci, 1);
@@ -594,9 +606,12 @@ void telemetry_json(Telemetry *s, int64_t sec, void *opaque) {
     fprintf(f,
             "{\"schema\":1,\"window_s\":%" PRId64 ",\"rat\":\"%s\",\"frames\":%" PRIu64
             ",\"decoded\":%" PRIu64 ",\"unsupported\":%" PRIu64 ",\"malformed\":%" PRIu64
-            ",\"late\":%" PRIu64 ",\"framing_errors\":%" PRIu64 ",\"lte\":{",
+            ",\"late\":%" PRIu64 ",\"framing_errors\":%" PRIu64
+            ",\"rrc_messages\":%" PRIu64 ",\"rrc_decoded\":%" PRIu64
+            ",\"rrc_malformed\":%" PRIu64 ",\"lte\":{",
             sec - s->origin, nr ? (lte ? "NSA" : "SA") : (lte ? "LTE" : "idle"), s->frames,
-            s->decoded, s->unsupported, s->malformed, s->late, s->framing_errors);
+            s->decoded, s->unsupported, s->malformed, s->late, s->framing_errors,
+            s->rrc_messages, s->rrc_decoded, s->rrc_malformed);
     number(f, "dl_mbps", lte ? s->lte_dl : NAN, 0);
     number(f, "ul_mbps", lte ? s->lte_ul : NAN, 1);
     fputs(",\"cells\":", f);

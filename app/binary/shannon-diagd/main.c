@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "telemetry.h"
+#include "rrc/shannon_rrc.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -16,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.3.4"
+#define VERSION "0.4.0"
 #define MAX_FRAME 65537
 static volatile sig_atomic_t stopping;
 static void stop_signal(int sig) {
@@ -256,6 +257,7 @@ static void usage(FILE *f) {
             VERSION);
 }
 int main(int argc, char **argv) {
+    atexit(shannon_rrc_reset);
     const char *path = "/dev/umts_dm0", *mode = "device",
                *control_path = "/data/adb/shannon-dm-relay/control.sock";
     int init = 0, control_fd = -1, direct_lock = -1;

@@ -30,8 +30,13 @@ class DiagMonitor(application: Application) : AndroidViewModel(application) {
     val state = mutableState.asStateFlow()
     private var active = false
     private val sessions = DiagSessionRunner(viewModelScope)
+    private val portHolds = mutableMapOf<Int, NrPortHold>()
+
+    fun holdPorts(subscriptionId: Int, carriers: List<DiagCarrier>): List<DiagCarrier> =
+        portHolds.getOrPut(subscriptionId) { NrPortHold() }.apply(carriers)
 
     fun setEnabled(enabled: Boolean) {
+        portHolds.clear()
         preferences.edit().putBoolean("enabled", enabled).apply()
         mutableState.update { State(enabled = enabled) }
         reschedule()

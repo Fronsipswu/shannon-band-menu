@@ -16,3 +16,7 @@ gradlew      text eol=lf
 *.jar binary
 *.png binary
 app/src/main/assets/* binary
+
+# Preserve the upstream asn1c output without hand-formatting generated source.
+app/binary/shannon-diagd/rrc/rrc_nr_gen.c -whitespace
+app/binary/shannon-diagd/rrc/rrc_nr_gen.h -whitespace
