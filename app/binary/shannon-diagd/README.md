@@ -44,6 +44,23 @@ The Kotlin layer parses finite values, preserves nulls/real zeros, and attribute
 
 The current decoder provides LTE/NR carrier identity, signal, throughput, scheduling and power fields where available. Unknown layouts are skipped. NR Port/Rx includes CSI-RS ports from received RRC configuration and the RX count. Some fields, including per-chain SINR and NR UL rank/TX mode, are not emitted by the current decoder and display dashes. The graph distinguishes missing DL/UL from a measured zero. Neighbour-cell decoding is outside this implementation.
 
+The helper's NR `rx` field comes from channel-configuration records. In the app,
+NR Port/Rx prefers the number of currently valid RX0..RX3 RSRP reports (strictly
+between -140 and -20 dBm), using configured `rx` only when no usable chain
+measurements exist. This displays measured chains, not a hardware capability or
+a count inferred from rank. Current ID-31 measurements provide this for the
+PCell; SCells without per-chain RSRP retain the configuration fallback. The
+existing measurement freshness rules prevent stale chain arrays being used.
+
+This choice was checked against serving/measurement records in
+`test_10271955_NR_Measurements`, `test_09182104`, and `test_09181844` and their
+NSG JSON exports. Reported RSRP-chain counts vary during the captures and do not
+always equal NSG's `PCell_Num_Antenna_Rx` at an aligned second. The UI therefore
+uses measured-chain occupancy as requested, without claiming to reproduce
+NSG's RX-mode selection. Zero-filled PDSCH/CSI SINR entries cannot be used to
+count active receivers. `NrRxCountTest` checks 4-to-1 changes, noncontiguous
+chains, invalid samples, configuration fallback and independence from rank.
+
 Version 0.4.0 adds a Shannon NR RRC wrapper and the trimmed ASN.1 CSI consumer, with per-SIM display hold behavior for idle ports. See [RRC decoder notes](rrc/README.md) for supported messages, bounds, state handling and verification limits.
 
 Version 0.3.4 emits per-carrier `uplink_active` from a positive reported UL rate or actual UL RB allocation in the supported grant records, expiring after three seconds without evidence. Uplink tables retain primary carriers and include SCells only while that flag is true. Generic debug MCS/power values and synthesized zero rates do not establish an uplink SCell. This reflects recently observed activity, not a complete RRC uplink-configuration catalogue. NR carriers without their own UL evidence no longer inherit zero UL throughput/PRBs from another carrier.

@@ -60,7 +60,11 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val pci = value("pci")?.toInt()
     val bandwidth = value("bandwidth_mhz")
     val scs = value("scs_khz")
-    val rx = value("rx")?.toInt()
+    val chainRsrp = json.numbers("chain_rsrp_dbm")
+    // Channel configuration can lag receiver changes. Prefer chains with a
+    // current valid RSRP measurement, independent of CSI rank or layer count.
+    val rx = if (nr) chainRsrp.take(4).count { it != null && it > -140 && it < -20 }
+        .takeIf { it > 0 } ?: value("rx")?.toInt() else value("rx")?.toInt()
     val csiPorts = value("csi_ports")?.toInt()?.takeIf { it in 1..32 }
     val downlinkScheduled = json.optBoolean("dl_scheduled", false)
     val tx = value("tx")?.toInt()
@@ -87,7 +91,6 @@ data class DiagCarrier(val nr: Boolean, private val json: JSONObject) {
     val beam = value("beam")?.toInt()
     val modulation = modulation(value("modulation_dl_bits"))
     val ulModulation = modulation(value("modulation_ul_bits"))
-    val chainRsrp = json.numbers("chain_rsrp_dbm")
     val chainRsrq = json.numbers("chain_rsrq_db")
     val label get() = band?.let { if (nr) "n$it" else "B$it" }
     val role get() = if (primary) "P" else "S$slot"
